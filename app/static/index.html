@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Plum Claims — Submit & Review</title>
+  <style>
+    :root { --bg:#0f172a; --panel:#1e293b; --line:#334155; --text:#e2e8f0; --muted:#94a3b8;
+            --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --info:#38bdf8; --accent:#818cf8; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+           background:var(--bg); color:var(--text); }
+    header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
+    header h1 { font-size:18px; margin:0; }
+    header span { color:var(--muted); font-size:13px; }
+    .wrap { display:grid; grid-template-columns: 1fr 1fr; gap:18px; padding:18px 24px; }
+    @media (max-width: 960px) { .wrap { grid-template-columns:1fr; } }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+    .card h2 { font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+    label { font-size:12px; color:var(--muted); display:block; margin:8px 0 4px; }
+    select, textarea, button { font:inherit; }
+    select { width:100%; padding:8px; background:#0b1220; color:var(--text); border:1px solid var(--line); border-radius:8px; }
+    textarea { width:100%; height:320px; padding:10px; background:#0b1220; color:var(--text);
+               border:1px solid var(--line); border-radius:8px; font-family: ui-monospace, monospace; font-size:12px; }
+    button { margin-top:12px; padding:10px 16px; background:var(--accent); color:#0b1020; border:0;
+             border-radius:8px; font-weight:600; cursor:pointer; }
+    button:hover { filter:brightness(1.08); }
+    .badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+    .APPROVED { background:rgba(34,197,94,.15); color:var(--ok); }
+    .PARTIAL { background:rgba(56,189,248,.15); color:var(--info); }
+    .REJECTED { background:rgba(239,68,68,.15); color:var(--bad); }
+    .MANUAL_REVIEW { background:rgba(245,158,11,.15); color:var(--warn); }
+    .BLOCKED { background:rgba(245,158,11,.15); color:var(--warn); }
+    .kv { font-size:14px; margin:6px 0; }
+    .kv b { color:var(--muted); font-weight:600; }
+    .issue { border-left:3px solid var(--warn); padding:8px 12px; margin:8px 0; background:#0b1220; border-radius:0 8px 8px 0; }
+    .explain { background:#0b1220; border:1px solid var(--line); border-radius:8px; padding:12px; margin:10px 0; }
+    table.trace { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
+    table.trace td { border-top:1px solid var(--line); padding:6px 8px; vertical-align:top; }
+    .st { font-weight:700; }
+    .st.OK { color:var(--ok); } .st.BLOCKED { color:var(--warn); }
+    .st.FAILED { color:var(--bad); } .st.SKIPPED { color:var(--muted); }
+    .muted { color:var(--muted); font-size:12px; }
+    .line { display:flex; justify-content:space-between; padding:4px 0; font-size:13px; }
+    .line.no { color:var(--bad); } .line.yes { color:var(--ok); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Plum Claims</h1><span>Submit a claim, see the decision and the full trace.</span>
+  </header>
+  <div class="wrap">
+    <div class="card">
+      <h2>Submit a claim</h2>
+      <label for="sample">Load a sample (the 12 test cases)</label>
+      <select id="sample"><option value="">— choose a test case —</option></select>
+      <label for="payload">Claim JSON</label>
+      <textarea id="payload" spellcheck="false"></textarea>
+      <button id="submit">Process claim →</button>
+    </div>
+    <div class="card">
+      <h2>Decision &amp; trace</h2>
+      <div id="result"><p class="muted">Submit a claim to see the result here.</p></div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let SAMPLES = [];
+
+async function loadSamples() {
+  const res = await fetch("/sample-claims");
+  SAMPLES = await res.json();
+  const sel = $("sample");
+  SAMPLES.forEach((c, i) => {
+    const o = document.createElement("option");
+    o.value = i; o.textContent = `${c.case_id} — ${c.case_name}`;
+    sel.appendChild(o);
+  });
+}
+$("sample")?.addEventListener("change", (e) => {
+  const i = e.target.value;
+  if (i === "") return;
+  $("payload").value = JSON.stringify(SAMPLES[i].input, null, 2);
+});
+
+function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+function render(body) {
+  const r = $("result");
+  if (body.detail) { r.innerHTML = `<p class="st FAILED">Error: ${esc(body.detail)}</p>`; return; }
+  let html = "";
+  const status = body.status;
+  const decision = body.decision;
+  html += `<div class="kv"><span class="badge ${decision||status}">${decision || status}</span>`;
+  if (body.degraded) html += ` <span class="badge MANUAL_REVIEW">DEGRADED</span>`;
+  html += `</div>`;
+  if (body.approved_amount != null) html += `<div class="kv"><b>Approved amount:</b> ₹${body.approved_amount}</div>`;
+  if (body.confidence != null) html += `<div class="kv"><b>Confidence:</b> ${body.confidence}</div>`;
+  if (body.rejection_reasons?.length) html += `<div class="kv"><b>Reasons:</b> ${body.rejection_reasons.join(", ")}</div>`;
+  html += `<div class="kv muted">Claim ${esc(body.claim_id)}</div>`;
+
+  if (body.explanation) html += `<div class="explain">${esc(body.explanation)}</div>`;
+
+  (body.blocking_issues||[]).forEach(i => {
+    html += `<div class="issue"><b>${esc(i.reason)}</b><br>${esc(i.message)}</div>`;
+  });
+
+  if (body.line_items?.length) {
+    html += `<div class="kv"><b>Line items</b></div>`;
+    body.line_items.forEach(li => {
+      html += `<div class="line ${li.covered?'yes':'no'}"><span>${esc(li.description)} ${li.covered?'✓':'✗'}${li.reason?' — '+esc(li.reason):''}</span><span>₹${li.amount}</span></div>`;
+    });
+  }
+
+  html += `<table class="trace">`;
+  (body.trace||[]).forEach(t => {
+    html += `<tr><td class="st ${t.status}">${t.status}</td><td><b>${esc(t.step)}</b><br><span class="muted">${esc(t.detail)}</span></td></tr>`;
+  });
+  html += `</table>`;
+  r.innerHTML = html;
+}
+
+$("submit")?.addEventListener("click", async () => {
+  let payload;
+  try { payload = JSON.parse($("payload").value); }
+  catch (e) { render({detail: "Invalid JSON: " + e.message}); return; }
+  $("result").innerHTML = '<p class="muted">Processing…</p>';
+  try {
+    const res = await fetch("/claims", {
+      method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload)
+    });
+    render(await res.json());
+  } catch (e) { render({detail: e.message}); }
+});
+
+loadSamples();
+</script>
+</body>
+</html>

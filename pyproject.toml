@@ -1,0 +1,19 @@
+# Tool configuration only. Dependencies live in requirements.txt so that
+# `pip install -r requirements.txt` stays the single, obvious install path.
+# This file holds no [project]/[build-system] table — we are not packaging
+# the app as a wheel in Phase 1.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# E/F = pyflakes+pycodestyle, I = import sorting, UP = pyupgrade, B = bugbear
+select = ["E", "F", "I", "UP", "B"]
+# UP042: we intentionally use `class X(str, Enum)` (clearer to explain than
+# StrEnum; identical Pydantic serialization). Keep it.
+ignore = ["UP042"]

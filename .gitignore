@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets / local config
+.env
+
+# Personal / non-deliverable files (not shared with reviewers)
+Plum_Interview_Complete_Guide.docx
+docs/NAMING_GUIDE.md
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# OS
+.DS_Store
