@@ -1,24 +1,34 @@
-"""Claim submission endpoint.
+"""Claim submission endpoints.
 
-`POST /claims` — accept a claim, run the pipeline, return the outcome:
+Two ways to submit, both running the SAME pipeline and returning the same shape:
+
+- `POST /claims`        — JSON body (`ClaimRequest`). Documents may carry
+                          pre-extracted `content` (the deterministic eval path).
+- `POST /claims/upload` — multipart form with real image/PDF files. Each file's
+                          bytes are attached to a `Document`; the pipeline
+                          classifies and extracts them with Claude vision.
+
+Outcome:
   - `BLOCKED`  : document verification stopped it (specific `blocking_issues`).
   - `DECIDED`  : the rule engine produced a `decision` (+ amount, reasons,
                  line items, confidence, explanation, financial breakdown).
 
 Errors
 ------
-- 422 (automatic): body fails `ClaimRequest` validation.
+- 422: body/form fails validation.
 - 503: policy/graph unavailable (degraded startup) — never decide without a policy.
 """
 
 from __future__ import annotations
 
+import base64
 import logging
 import uuid
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from pydantic import ValidationError
 
-from app.models.claim import ClaimRequest
+from app.models.claim import ClaimRequest, Document
 from app.models.decision import ClaimProcessingResult, ProcessingStatus
 
 logger = logging.getLogger(__name__)
@@ -26,8 +36,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["claims"])
 
 
-@router.post("/claims", response_model=ClaimProcessingResult)
-def submit_claim(claim: ClaimRequest, request: Request) -> ClaimProcessingResult:
+def _run_pipeline(claim: ClaimRequest, request: Request) -> ClaimProcessingResult:
+    """Resolve shared resources, run the graph, and assemble the response.
+
+    Shared by both the JSON and multipart endpoints so they behave identically.
+    """
     policy = getattr(request.app.state, "policy", None)
     graph = getattr(request.app.state, "graph", None)
     if policy is None or graph is None:
@@ -71,3 +84,63 @@ def submit_claim(claim: ClaimRequest, request: Request) -> ClaimProcessingResult
         note=" ".join(result.notes) or None,
         trace=trace,
     )
+
+
+@router.post("/claims", response_model=ClaimProcessingResult)
+def submit_claim(claim: ClaimRequest, request: Request) -> ClaimProcessingResult:
+    """Submit a claim as JSON (documents may carry pre-extracted `content`)."""
+    return _run_pipeline(claim, request)
+
+
+@router.post("/claims/upload", response_model=ClaimProcessingResult)
+async def submit_claim_upload(
+    request: Request,
+    files: list[UploadFile] = File(..., description="One or more images/PDFs"),
+    member_id: str = Form(...),
+    policy_id: str = Form(...),
+    claim_category: str = Form(...),
+    treatment_date: str = Form(...),
+    claimed_amount: float = Form(...),
+    hospital_name: str | None = Form(None),
+    ytd_claims_amount: float | None = Form(None),
+    pre_authorization_obtained: bool = Form(False),
+) -> ClaimProcessingResult:
+    """Submit a claim with real uploaded documents (images/PDFs).
+
+    The document type is NOT supplied by the caller — the pipeline classifies
+    each file with vision and extracts its fields, then adjudicates as usual.
+    """
+    documents: list[Document] = []
+    for index, upload in enumerate(files, start=1):
+        raw = await upload.read()
+        if not raw:
+            continue
+        documents.append(
+            Document(
+                file_id=f"F{index:03d}",
+                file_name=upload.filename,
+                media_type=upload.content_type,
+                data_base64=base64.b64encode(raw).decode("ascii"),
+                actual_type=None,  # resolved by the vision classifier
+            )
+        )
+
+    if not documents:
+        raise HTTPException(status_code=422, detail="At least one non-empty file is required.")
+
+    try:
+        claim = ClaimRequest(
+            member_id=member_id,
+            policy_id=policy_id,
+            claim_category=claim_category,
+            treatment_date=treatment_date,
+            claimed_amount=claimed_amount,
+            hospital_name=hospital_name,
+            ytd_claims_amount=ytd_claims_amount,
+            pre_authorization_obtained=pre_authorization_obtained,
+            documents=documents,
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+    return _run_pipeline(claim, request)

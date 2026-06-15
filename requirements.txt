@@ -2,6 +2,7 @@
 # Pinned to minimum versions; lock with a hash-pinned lockfile for production.
 fastapi>=0.115            # web framework + dependency injection + OpenAPI docs
 uvicorn[standard]>=0.30   # ASGI server to run the app locally
+python-multipart>=0.0.9   # multipart/form-data parsing for file uploads
 pydantic>=2.7             # data modeling + validation (v2)
 pydantic-settings>=2.3    # typed settings from env / .env
 langgraph>=0.2            # graph orchestration for the claim pipeline

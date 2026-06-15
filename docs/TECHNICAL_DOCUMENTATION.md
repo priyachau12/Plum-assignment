@@ -413,11 +413,23 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
 - **Raises:** nothing — verification is total.
 
 ### `POST /claims`
-- **Input (body):** `ClaimRequest` (JSON). Malformed → **422** automatically.
-- **Output (200):** `ClaimProcessingResult{ claim_id, status, decision(null in P2),
-  blocking_issues[], note, trace[] }`. `status` is `BLOCKED` (verification stopped
-  it) or `VERIFICATION_PASSED`.
+- **Input (body):** `ClaimRequest` (JSON). Documents may declare `actual_type`
+  and carry pre-extracted `content`. Malformed → **422** automatically.
+- **Output (200):** `ClaimProcessingResult{ claim_id, status, decision,
+  approved_amount, rejection_reasons[], line_items[], confidence, degraded,
+  blocking_issues[], explanation, financial_breakdown, note, trace[] }`. `status`
+  is `BLOCKED` (verification stopped it) or `DECIDED`.
 - **Errors:** **503** if the policy/graph is unavailable (degraded startup).
+
+### `POST /claims/upload`
+- **Input (multipart/form-data):** `files` (one or more images/PDFs) + form fields
+  `member_id, policy_id, claim_category, treatment_date, claimed_amount` and the
+  optionals `hospital_name, ytd_claims_amount, pre_authorization_obtained`. Each
+  file's bytes are base64-attached to a `Document` with `actual_type` unset, so
+  the pipeline classifies and extracts it with Claude vision.
+- **Output (200):** identical `ClaimProcessingResult` shape as `POST /claims`.
+- **Errors:** **422** if no non-empty file is supplied or a form field is invalid;
+  **503** if the policy/graph is unavailable.
 
 ### `adjudicate(request, member, normalized, policy, financials, extracted, degraded) -> AdjudicationResult`
 - **Input:** validated claim, resolved member (or None), normalized diagnosis,
@@ -429,8 +441,14 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
 - **Raises:** nothing.
 
 ### `LLMClient` (interface) — `build_llm_client(settings) -> LLMClient | None`
-- **Methods:** `classify_document(doc) -> str`, `extract_document(doc) -> dict`,
-  `generate_explanation(decision, approved_amount, reasons, fallback) -> str`.
+- **Methods:**
+  - `triage_document(doc) -> DocumentTriage{document_type, readable, patient_name}`
+    — vision classification + readability + patient name (feeds the early gate).
+  - `read_document_fields(doc) -> dict` — vision structured extraction.
+  - `write_explanation(decision, approved_amount, reasons, fallback) -> str`.
+- **Vision:** when `doc.data_base64`/`doc.media_type` are set, the call attaches an
+  image or PDF content block so Claude reads the real document; otherwise it falls
+  back to a filename-only prompt.
 - **Raises:** `LLMError` on any provider/parse failure (callers degrade, never crash).
 - **Factory:** returns `None` when `use_llm` is false or no API key (offline mode).
 

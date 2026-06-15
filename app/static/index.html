@@ -18,13 +18,28 @@
     .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
     .card h2 { font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
     label { font-size:12px; color:var(--muted); display:block; margin:8px 0 4px; }
-    select, textarea, button { font:inherit; }
-    select { width:100%; padding:8px; background:#0b1220; color:var(--text); border:1px solid var(--line); border-radius:8px; }
+    select, textarea, button, input { font:inherit; }
+    select, input[type=text], input[type=number], input[type=date] {
+      width:100%; padding:8px; background:#0b1220; color:var(--text); border:1px solid var(--line); border-radius:8px; }
     textarea { width:100%; height:320px; padding:10px; background:#0b1220; color:var(--text);
                border:1px solid var(--line); border-radius:8px; font-family: ui-monospace, monospace; font-size:12px; }
     button { margin-top:12px; padding:10px 16px; background:var(--accent); color:#0b1020; border:0;
              border-radius:8px; font-weight:600; cursor:pointer; }
     button:hover { filter:brightness(1.08); }
+    .tabs { display:flex; gap:8px; margin-bottom:12px; }
+    .tab { padding:6px 14px; border:1px solid var(--line); border-radius:999px; background:#0b1220;
+           color:var(--muted); cursor:pointer; font-size:13px; margin:0; }
+    .tab.active { background:var(--accent); color:#0b1020; font-weight:700; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .drop { border:2px dashed var(--line); border-radius:10px; padding:22px; text-align:center;
+            color:var(--muted); cursor:pointer; background:#0b1220; }
+    .drop.hover { border-color:var(--accent); color:var(--text); }
+    .files { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
+    .file { width:120px; border:1px solid var(--line); border-radius:8px; padding:8px; background:#0b1220; font-size:11px; }
+    .file img { width:100%; height:64px; object-fit:cover; border-radius:6px; }
+    .file .pdf { height:64px; display:flex; align-items:center; justify-content:center; font-size:24px; background:#1e293b; border-radius:6px; }
+    .file .nm { margin-top:6px; word-break:break-all; color:var(--muted); }
+    .hidden { display:none; }
     .badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; }
     .APPROVED { background:rgba(34,197,94,.15); color:var(--ok); }
     .PARTIAL { background:rgba(56,189,248,.15); color:var(--info); }
@@ -52,11 +67,41 @@
   <div class="wrap">
     <div class="card">
       <h2>Submit a claim</h2>
-      <label for="sample">Load a sample (the 12 test cases)</label>
-      <select id="sample"><option value="">— choose a test case —</option></select>
-      <label for="payload">Claim JSON</label>
-      <textarea id="payload" spellcheck="false"></textarea>
-      <button id="submit">Process claim →</button>
+      <div class="tabs">
+        <button class="tab active" id="tab-upload" type="button">Upload documents</button>
+        <button class="tab" id="tab-json" type="button">JSON (advanced)</button>
+      </div>
+
+      <!-- Upload mode: real images/PDFs → POST /claims/upload (vision) -->
+      <div id="mode-upload">
+        <div class="grid2">
+          <div><label>Member ID</label><input type="text" id="u_member" value="EMP001"></div>
+          <div><label>Policy ID</label><input type="text" id="u_policy" value="PLUM_GHI_2024"></div>
+          <div><label>Category</label>
+            <select id="u_category">
+              <option>CONSULTATION</option><option>DIAGNOSTIC</option><option>PHARMACY</option>
+              <option>DENTAL</option><option>VISION</option><option>ALTERNATIVE_MEDICINE</option>
+            </select>
+          </div>
+          <div><label>Treatment date</label><input type="date" id="u_date" value="2024-11-01"></div>
+          <div><label>Claimed amount (₹)</label><input type="number" id="u_amount" value="1500"></div>
+          <div><label>Hospital name (optional)</label><input type="text" id="u_hospital" placeholder="e.g. Apollo Hospitals"></div>
+        </div>
+        <label>Documents (images / PDFs)</label>
+        <div class="drop" id="drop">⬆ Drag &amp; drop or click to upload images / PDFs</div>
+        <input type="file" id="files" class="hidden" multiple accept="image/*,application/pdf">
+        <div class="files" id="thumbs"></div>
+        <button id="submit-upload" type="button">Process claim →</button>
+      </div>
+
+      <!-- JSON mode: deterministic path, also loads the 12 test cases -->
+      <div id="mode-json" class="hidden">
+        <label for="sample">Load a sample (the 12 test cases)</label>
+        <select id="sample"><option value="">— choose a test case —</option></select>
+        <label for="payload">Claim JSON</label>
+        <textarea id="payload" spellcheck="false"></textarea>
+        <button id="submit-json" type="button">Process claim →</button>
+      </div>
     </div>
     <div class="card">
       <h2>Decision &amp; trace</h2>
@@ -67,7 +112,20 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let SAMPLES = [];
+let PICKED = [];
 
+/* ---- tab switching ---- */
+function setMode(mode) {
+  const up = mode === "upload";
+  $("tab-upload").classList.toggle("active", up);
+  $("tab-json").classList.toggle("active", !up);
+  $("mode-upload").classList.toggle("hidden", !up);
+  $("mode-json").classList.toggle("hidden", up);
+}
+$("tab-upload").addEventListener("click", () => setMode("upload"));
+$("tab-json").addEventListener("click", () => setMode("json"));
+
+/* ---- JSON mode (existing behavior) ---- */
 async function loadSamples() {
   const res = await fetch("/sample-claims");
   SAMPLES = await res.json();
@@ -84,11 +142,56 @@ $("sample")?.addEventListener("change", (e) => {
   $("payload").value = JSON.stringify(SAMPLES[i].input, null, 2);
 });
 
+/* ---- Upload mode ---- */
+function renderThumbs() {
+  const box = $("thumbs"); box.innerHTML = "";
+  PICKED.forEach((f) => {
+    const div = document.createElement("div"); div.className = "file";
+    if (f.type === "application/pdf") {
+      div.innerHTML = `<div class="pdf">📄</div><div class="nm">${esc(f.name)}</div>`;
+    } else {
+      const url = URL.createObjectURL(f);
+      div.innerHTML = `<img src="${url}" alt=""><div class="nm">${esc(f.name)}</div>`;
+    }
+    box.appendChild(div);
+  });
+}
+$("drop").addEventListener("click", () => $("files").click());
+$("files").addEventListener("change", (e) => { PICKED = Array.from(e.target.files); renderThumbs(); });
+["dragover","dragenter"].forEach(ev => $("drop").addEventListener(ev, (e) => {
+  e.preventDefault(); $("drop").classList.add("hover");
+}));
+["dragleave","drop"].forEach(ev => $("drop").addEventListener(ev, (e) => {
+  e.preventDefault(); $("drop").classList.remove("hover");
+}));
+$("drop").addEventListener("drop", (e) => { PICKED = Array.from(e.dataTransfer.files); renderThumbs(); });
+
+$("submit-upload").addEventListener("click", async () => {
+  if (!PICKED.length) { render({detail: "Please choose at least one document to upload."}); return; }
+  const fd = new FormData();
+  PICKED.forEach((f) => fd.append("files", f));
+  fd.append("member_id", $("u_member").value);
+  fd.append("policy_id", $("u_policy").value);
+  fd.append("claim_category", $("u_category").value);
+  fd.append("treatment_date", $("u_date").value);
+  fd.append("claimed_amount", $("u_amount").value);
+  if ($("u_hospital").value) fd.append("hospital_name", $("u_hospital").value);
+  $("result").innerHTML = '<p class="muted">Reading documents and processing…</p>';
+  try {
+    const res = await fetch("/claims/upload", { method: "POST", body: fd });
+    render(await res.json());
+  } catch (e) { render({detail: e.message}); }
+});
+
+/* ---- shared rendering ---- */
 function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
 
 function render(body) {
   const r = $("result");
-  if (body.detail) { r.innerHTML = `<p class="st FAILED">Error: ${esc(body.detail)}</p>`; return; }
+  if (body.detail) {
+    const msg = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+    r.innerHTML = `<p class="st FAILED">Error: ${esc(msg)}</p>`; return;
+  }
   let html = "";
   const status = body.status;
   const decision = body.decision;
@@ -121,7 +224,7 @@ function render(body) {
   r.innerHTML = html;
 }
 
-$("submit")?.addEventListener("click", async () => {
+$("submit-json")?.addEventListener("click", async () => {
   let payload;
   try { payload = JSON.parse($("payload").value); }
   catch (e) { render({detail: "Invalid JSON: " + e.message}); return; }
@@ -135,6 +238,7 @@ $("submit")?.addEventListener("click", async () => {
 });
 
 loadSamples();
+setMode("upload");
 </script>
 </body>
 </html>

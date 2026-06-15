@@ -21,8 +21,14 @@ Modeling notes
 --------------
 - Enums (`ClaimCategory`, `DocumentType`, `DocumentQuality`) reject unknown
   values at the edge and give the UI a fixed vocabulary.
-- `Document.content` stays a free-form dict in Phase 2 — typed extraction models
-  arrive with the LLM extraction node in Phase 3.
+- A document arrives one of two ways:
+    (a) JSON with `actual_type` + pre-extracted `content` — the deterministic
+        path the 12 test cases use; or
+    (b) a real upload (image/PDF) carried as `data_base64` + `media_type` with
+        `actual_type` left unset — the vision path, where `label_documents`
+        classifies it and `read_documents` extracts its fields with the LLM.
+  `actual_type` is therefore optional: declared by the caller, or resolved by
+  vision before the document-verification gate runs.
 - Optional fields (`hospital_name`, `ytd_claims_amount`, `claims_history`,
   `simulate_component_failure`) appear in only some test cases; they are modeled
   now so the request shape is stable, even though they are consumed by the rule
@@ -69,14 +75,32 @@ class DocumentQuality(str, Enum):
 
 
 class Document(BaseModel):
-    """One uploaded document plus the metadata needed to verify it."""
+    """One uploaded document plus the metadata needed to verify it.
+
+    `actual_type` is optional: the caller may declare it (JSON path) or it is
+    resolved by the vision classifier in `label_documents` for real uploads.
+    `data_base64`/`media_type` carry the raw file bytes for the vision path.
+    """
 
     file_id: str
-    actual_type: DocumentType
+    actual_type: DocumentType | None = None
     file_name: str | None = None
     quality: DocumentQuality = DocumentQuality.GOOD
     patient_name_on_doc: str | None = None
     content: dict[str, Any] | None = None
+
+    # Real-upload payload (images / PDFs). Absent on the JSON/eval path.
+    media_type: str | None = None  # e.g. "image/jpeg", "application/pdf"
+    data_base64: str | None = None  # base64-encoded file bytes
+
+    @property
+    def has_bytes(self) -> bool:
+        """True when raw file bytes are attached (the vision path applies)."""
+        return bool(self.data_base64)
+
+    def type_label(self) -> str:
+        """Human/UI label for the document's type, even before classification."""
+        return self.actual_type.value if self.actual_type else "UNIDENTIFIED_DOCUMENT"
 
     def patient_name(self) -> str | None:
         """Best-known patient name for this document: the explicit field if

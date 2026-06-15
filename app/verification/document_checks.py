@@ -59,7 +59,7 @@ def _check_required_documents_present(
             detail=f"No document requirements configured for {request.claim_category.value}.",
         )
 
-    uploaded_types = [doc.actual_type.value for doc in request.documents]
+    uploaded_types = [doc.type_label() for doc in request.documents]
     present = set(uploaded_types)
     missing = [t for t in requirement.required if t not in present]
 
@@ -108,7 +108,7 @@ def _check_documents_readable(request: ClaimRequest) -> tuple[list[BlockingIssue
         for doc in unreadable:
             name = doc.file_name or doc.file_id
             message = (
-                f"The {doc.actual_type.value} ({name}) could not be read — the image "
+                f"The {doc.type_label()} ({name}) could not be read — the image "
                 f"quality is too low. Please re-upload a clearer photo or scan of this "
                 f"document. Your claim has NOT been rejected; we just need a readable copy."
             )
@@ -116,7 +116,7 @@ def _check_documents_readable(request: ClaimRequest) -> tuple[list[BlockingIssue
                 BlockingIssue(
                     reason=BlockingReason.UNREADABLE_DOCUMENT,
                     message=message,
-                    details={"file_id": doc.file_id, "document_type": doc.actual_type.value},
+                    details={"file_id": doc.file_id, "document_type": doc.type_label()},
                 )
             )
         return issues, TraceEntry(
@@ -144,7 +144,7 @@ def _check_same_patient(request: ClaimRequest) -> tuple[list[BlockingIssue], Tra
     distinct = {_clean_name(name) for _, name in named}
 
     if len(distinct) > 1:
-        parts = [f"the {doc.actual_type.value} names '{name}'" for doc, name in named]
+        parts = [f"the {doc.type_label()} names '{name}'" for doc, name in named]
         message = (
             "The uploaded documents appear to belong to different patients: "
             + "; ".join(parts)
@@ -154,7 +154,7 @@ def _check_same_patient(request: ClaimRequest) -> tuple[list[BlockingIssue], Tra
         issue = BlockingIssue(
             reason=BlockingReason.PATIENT_MISMATCH,
             message=message,
-            details={"names_found": {doc.actual_type.value: name for doc, name in named}},
+            details={"names_found": {doc.type_label(): name for doc, name in named}},
         )
         return [issue], TraceEntry(
             step="check.same_patient",

@@ -17,3 +17,7 @@ select = ["E", "F", "I", "UP", "B"]
 # UP042: we intentionally use `class X(str, Enum)` (clearer to explain than
 # StrEnum; identical Pydantic serialization). Keep it.
 ignore = ["UP042"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency markers are designed to be called in argument defaults.
+extend-immutable-calls = ["fastapi.File", "fastapi.Form", "fastapi.Depends", "fastapi.Query"]
