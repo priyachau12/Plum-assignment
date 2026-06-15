@@ -1,21 +1,21 @@
-"""label_documents node (AI-allowed) — the classification pass.
+"""classify node (AI-allowed) — the classification pass.
 
 Decides what type each document is, whether it is readable, and whose name is on
 it. When the caller already declared the type (as the 12 test cases do), we trust
 it. For a real upload (image/PDF bytes, no declared type) the vision model runs
 and we resolve the findings ONTO the document, so the downstream
-document-verification gate (`check_documents`) can catch the wrong type, an
+document-verification gate (`verify_documents`) can catch the wrong type, an
 unreadable scan, or a patient mismatch on real documents — before any extraction.
 
 Why resolve onto the document
 -----------------------------
-`check_documents`, `read_documents`, and the rule engine all read `actual_type`,
+`verify_documents`, `extract`, and the rule engine all read `actual_type`,
 `quality`, and the patient name straight off each `Document`. Writing the vision
 findings back there keeps every later step unchanged whether the type was
 declared or classified.
 
 - Bound to the (optional) `llm` client in `graph/builder.py`.
-- Writes `document_types` (file_id -> resolved type) + trace.
+- Writes `classified_docs` (file_id -> resolved type) + trace.
 """
 
 from __future__ import annotations
@@ -40,18 +40,18 @@ def _coerce_type(label: str | None) -> DocumentType | None:
         return None
 
 
-def label_documents(state: ClaimState, *, llm: LLMClient | None) -> dict:
+def classify(state: ClaimState, *, llm: LLMClient | None) -> dict:
     request = state["request"]
-    document_types: dict[str, str] = {}
+    classified_docs: dict[str, str] = {}
     entries: list[TraceEntry] = []
 
     for doc in request.documents:
         # (a) Caller declared the type (JSON / eval path): trust it.
         if doc.actual_type is not None:
-            document_types[doc.file_id] = doc.actual_type.value
+            classified_docs[doc.file_id] = doc.actual_type.value
             entries.append(
                 TraceEntry(
-                    step="label_documents",
+                    step="classify",
                     status=TraceStatus.OK,
                     detail=f"{doc.file_id}: type {doc.actual_type.value} (declared by caller).",
                     data={
@@ -66,11 +66,11 @@ def label_documents(state: ClaimState, *, llm: LLMClient | None) -> dict:
         # (b) Real upload, no declared type: classify with vision.
         if llm is not None:
             try:
-                triage = llm.triage_document(doc)
+                classification = llm.classify_document(doc)
             except LLMError as exc:
                 entries.append(
                     TraceEntry(
-                        step="label_documents",
+                        step="classify",
                         status=TraceStatus.FAILED,
                         detail=f"{doc.file_id}: could not classify document: {exc}",
                         data={"file_id": doc.file_id},
@@ -78,14 +78,14 @@ def label_documents(state: ClaimState, *, llm: LLMClient | None) -> dict:
                 )
                 continue
 
-            resolved = _coerce_type(triage.document_type)
+            resolved = _coerce_type(classification.document_type)
             if resolved is not None:
                 doc.actual_type = resolved
-                document_types[doc.file_id] = resolved.value
-            if not triage.readable:
+                classified_docs[doc.file_id] = resolved.value
+            if not classification.readable:
                 doc.quality = DocumentQuality.UNREADABLE
-            if triage.patient_name and not doc.patient_name_on_doc:
-                doc.patient_name_on_doc = triage.patient_name
+            if classification.patient_name and not doc.patient_name_on_doc:
+                doc.patient_name_on_doc = classification.patient_name
 
             status = TraceStatus.OK if resolved is not None else TraceStatus.FAILED
             detail = (
@@ -93,19 +93,18 @@ def label_documents(state: ClaimState, *, llm: LLMClient | None) -> dict:
                 if resolved is not None
                 else f"{doc.file_id}: AI could not identify the document type"
             )
+            patient = classification.patient_name
+            patient_note = f", patient={patient}" if patient else ""
             entries.append(
                 TraceEntry(
-                    step="label_documents",
+                    step="classify",
                     status=status,
-                    detail=(
-                        f"{detail} (readable={triage.readable}"
-                        f"{', patient=' + triage.patient_name if triage.patient_name else ''})."
-                    ),
+                    detail=f"{detail} (readable={classification.readable}{patient_note}).",
                     data={
                         "file_id": doc.file_id,
                         "type": resolved.value if resolved else None,
-                        "readable": triage.readable,
-                        "patient_name": triage.patient_name,
+                        "readable": classification.readable,
+                        "patient_name": classification.patient_name,
                         "source": "llm",
                     },
                 )
@@ -115,11 +114,11 @@ def label_documents(state: ClaimState, *, llm: LLMClient | None) -> dict:
         # (c) No declared type and no AI configured: cannot classify.
         entries.append(
             TraceEntry(
-                step="label_documents",
+                step="classify",
                 status=TraceStatus.SKIPPED,
                 detail=f"{doc.file_id}: no declared type and no AI configured; type unidentified.",
                 data={"file_id": doc.file_id},
             )
         )
 
-    return {"document_types": document_types, "trace": entries}
+    return {"classified_docs": classified_docs, "trace": entries}

@@ -2,8 +2,8 @@
 
 Purpose
 -------
-Given a validated claim, the resolved member, the matched diagnosis, the policy,
-and the bill details, apply an ORDERED set of rules and return a single
+Given a validated claim, the resolved member, the normalized diagnosis, the
+policy, and the bill details, apply an ORDERED set of rules and return a single
 `DecisionResult` (verdict + approved amount + per-line breakdown + confidence +
 a trace of every rule that ran).
 
@@ -27,7 +27,7 @@ Rule order (precedence)
 
 Interactions
 ------------
-- Called by the `decide_claim` node with inputs assembled from state.
+- Called by the `adjudicate` node with inputs assembled from state.
 - Returns `DecisionResult` (models/decision.py).
 """
 
@@ -47,7 +47,12 @@ from app.models.decision import (
     TraceStatus,
 )
 from app.models.policy import Member, OpdCategory, Policy
-from app.rules.bill_details import BillDetails, get_document_fields
+from app.rules.financials import (
+    BillDetails,
+    compute_financials,
+    effective_per_claim_cap,
+    get_document_fields,
+)
 
 _LINE_ITEM_CATEGORIES = {"DENTAL", "VISION"}
 
@@ -90,10 +95,10 @@ def _find_fraud_signals(request: ClaimRequest, policy: Policy) -> list[str]:
     return signals
 
 
-def _collect_test_text(request: ClaimRequest, read_fields: dict[str, Any]) -> str:
+def _collect_test_text(request: ClaimRequest, extracted_content: dict[str, Any]) -> str:
     parts: list[str] = []
     for doc in request.documents:
-        fields = get_document_fields(doc, read_fields)
+        fields = get_document_fields(doc, extracted_content)
         for key in ("tests_ordered", "test_name", "diagnosis", "treatment"):
             value = fields.get(key)
             if isinstance(value, str):
@@ -105,13 +110,13 @@ def _collect_test_text(request: ClaimRequest, read_fields: dict[str, Any]) -> st
     return " | ".join(parts).lower()
 
 
-def apply_rules(
+def adjudicate(
     request: ClaimRequest,
     member: Member | None,
     diagnosis: DiagnosisMatch,
     policy: Policy,
     bill: BillDetails,
-    read_fields: dict[str, Any],
+    extracted_content: dict[str, Any],
     degraded: bool,
 ) -> DecisionResult:
     trace: list[TraceEntry] = []
@@ -166,7 +171,7 @@ def apply_rules(
     # ---- Rule 1: eligibility -------------------------------------------------
     if member is None:
         record(
-            "decide.eligibility",
+            "adjudicate.eligibility",
             TraceStatus.BLOCKED,
             f"Member {request.member_id} is not on the policy roster.",
         )
@@ -175,7 +180,7 @@ def apply_rules(
             [f"Member {request.member_id} is not covered under {policy.policy_id}."],
         )
     record(
-        "decide.eligibility",
+        "adjudicate.eligibility",
         TraceStatus.OK,
         f"Member {member.member_id} ({member.name}) is covered.",
     )
@@ -183,7 +188,7 @@ def apply_rules(
     # ---- Rule 2: whole-claim exclusion --------------------------------------
     if diagnosis.excluded_condition:
         record(
-            "decide.exclusions",
+            "adjudicate.exclusions",
             TraceStatus.BLOCKED,
             f"Diagnosis/treatment matches a policy exclusion: '{diagnosis.excluded_condition}'.",
         )
@@ -192,7 +197,9 @@ def apply_rules(
             [f"This claim is for an excluded condition: '{diagnosis.excluded_condition}'."],
         )
     record(
-        "decide.exclusions", TraceStatus.OK, "No policy exclusion matched the diagnosis/treatment."
+        "adjudicate.exclusions",
+        TraceStatus.OK,
+        "No policy exclusion matched the diagnosis/treatment.",
     )
 
     # ---- Rule 3: waiting period ---------------------------------------------
@@ -203,7 +210,7 @@ def apply_rules(
             eligible = member.join_date + timedelta(days=days)
             if request.treatment_date < eligible:
                 record(
-                    "decide.waiting_period",
+                    "adjudicate.waiting_period",
                     TraceStatus.BLOCKED,
                     f"'{diagnosis.waiting_condition}' has a {days}-day waiting period; "
                     f"member joined {member.join_date.isoformat()}, eligible from "
@@ -219,7 +226,7 @@ def apply_rules(
         eligible_initial = member.join_date + timedelta(days=waiting.initial_waiting_period_days)
         if request.treatment_date < eligible_initial:
             record(
-                "decide.waiting_period",
+                "adjudicate.waiting_period",
                 TraceStatus.BLOCKED,
                 f"Initial {waiting.initial_waiting_period_days}-day waiting period; "
                 f"eligible from {eligible_initial.isoformat()}.",
@@ -231,17 +238,17 @@ def apply_rules(
                     f"Eligible from {eligible_initial.isoformat()}."
                 ],
             )
-    record("decide.waiting_period", TraceStatus.OK, "Outside all applicable waiting periods.")
+    record("adjudicate.waiting_period", TraceStatus.OK, "Outside all applicable waiting periods.")
 
     # ---- Rule 4: pre-authorization ------------------------------------------
     high_value_tests = (cat.high_value_tests_requiring_pre_auth if cat else []) or []
     if high_value_tests:
-        text = _collect_test_text(request, read_fields)
+        text = _collect_test_text(request, extracted_content)
         found = [test for test in high_value_tests if test.lower() in text]
         threshold = (cat.pre_auth_threshold if cat else None) or 0
         if found and request.claimed_amount > threshold and not request.pre_authorization_obtained:
             record(
-                "decide.pre_auth",
+                "adjudicate.pre_auth",
                 TraceStatus.BLOCKED,
                 f"{', '.join(found)} above {threshold} requires pre-authorization; none provided.",
             )
@@ -252,13 +259,13 @@ def apply_rules(
                     f"{threshold:.0f} and was not obtained. Obtain pre-auth and resubmit."
                 ],
             )
-    record("decide.pre_auth", TraceStatus.OK, "No pre-authorization requirement triggered.")
+    record("adjudicate.pre_auth", TraceStatus.OK, "No pre-authorization requirement triggered.")
 
     # ---- Rule 5: per-claim limit (on the covered amount) --------------------
-    per_claim_cap = max(policy.coverage.per_claim_limit, cat.sub_limit if cat else 0)
+    per_claim_cap = effective_per_claim_cap(cat, policy)
     if covered_base > per_claim_cap:
         record(
-            "decide.per_claim_limit",
+            "adjudicate.per_claim_limit",
             TraceStatus.BLOCKED,
             f"Covered amount {covered_base:.0f} exceeds the per-claim limit of "
             f"{policy.coverage.per_claim_limit:.0f}.",
@@ -271,7 +278,7 @@ def apply_rules(
             ],
         )
     record(
-        "decide.per_claim_limit",
+        "adjudicate.per_claim_limit",
         TraceStatus.OK,
         f"Covered amount {covered_base:.0f} is within the limit of {per_claim_cap:.0f}.",
     )
@@ -279,7 +286,9 @@ def apply_rules(
     # ---- Rule 6: all line items excluded ------------------------------------
     if category in _LINE_ITEM_CATEGORIES and bill.items and not any_covered:
         record(
-            "decide.line_items", TraceStatus.BLOCKED, "Every line item is an excluded procedure."
+            "adjudicate.line_items",
+            TraceStatus.BLOCKED,
+            "Every line item is an excluded procedure.",
         )
         return rejected(
             RejectionReason.EXCLUDED_CONDITION, ["All claimed procedures are excluded."]
@@ -288,7 +297,7 @@ def apply_rules(
     # ---- Rule 7: fraud signals ----------------------------------------------
     signals = _find_fraud_signals(request, policy)
     if signals:
-        record("decide.fraud", TraceStatus.BLOCKED, "; ".join(signals), {"signals": signals})
+        record("adjudicate.fraud", TraceStatus.BLOCKED, "; ".join(signals), {"signals": signals})
         return DecisionResult(
             decision=Decision.MANUAL_REVIEW,
             approved_amount=0.0,
@@ -298,12 +307,12 @@ def apply_rules(
             financial_breakdown={"signals": signals},
             trace_entries=trace,
         )
-    record("decide.fraud", TraceStatus.OK, "No fraud signals.")
+    record("adjudicate.fraud", TraceStatus.OK, "No fraud signals.")
 
     # ---- Rule 8: high-value auto manual review ------------------------------
     if request.claimed_amount > policy.fraud_thresholds.auto_manual_review_above:
         record(
-            "decide.high_value",
+            "adjudicate.high_value",
             TraceStatus.BLOCKED,
             f"Amount {request.claimed_amount:.0f} exceeds auto-review threshold "
             f"{policy.fraud_thresholds.auto_manual_review_above:.0f}.",
@@ -318,21 +327,7 @@ def apply_rules(
         )
 
     # ---- Rule 9: money math (network discount BEFORE co-pay) ----------------
-    discount_pct = cat.network_discount_percent if cat and bill.is_network_hospital else 0.0
-    copay_pct = cat.copay_percent if cat else 0.0
-    after_discount = covered_base * (1 - discount_pct / 100)
-    after_copay = after_discount * (1 - copay_pct / 100)
-    approved = round(min(after_copay, per_claim_cap), 2)
-
-    breakdown: dict[str, Any] = {
-        "covered_base": round(covered_base, 2),
-        "is_network": bill.is_network_hospital,
-        "network_discount_percent": discount_pct,
-        "after_network_discount": round(after_discount, 2),
-        "copay_percent": copay_pct,
-        "after_copay": round(after_copay, 2),
-        "approved_amount": approved,
-    }
+    approved, breakdown = compute_financials(covered_base, cat, bill, policy)
     notes: list[str] = []
     if degraded:
         notes.append(
@@ -340,10 +335,12 @@ def apply_rules(
             "due to incomplete processing."
         )
     record(
-        "decide.money_math",
+        "adjudicate.financials",
         TraceStatus.OK,
-        f"covered {covered_base:.0f} -> network discount {discount_pct:.0f}% -> "
-        f"{after_discount:.0f} -> co-pay {copay_pct:.0f}% -> approved {approved:.0f}.",
+        f"covered {breakdown['covered_base']:.0f} -> network discount "
+        f"{breakdown['network_discount_percent']:.0f}% -> "
+        f"{breakdown['after_network_discount']:.0f} -> co-pay "
+        f"{breakdown['copay_percent']:.0f}% -> approved {approved:.0f}.",
         breakdown,
     )
 

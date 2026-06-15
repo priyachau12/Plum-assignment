@@ -27,7 +27,7 @@
 
 ```json
 {
-  "claim_id": "CLM_7F881ABA",
+  "claim_id": "CLM_B955742B",
   "status": "BLOCKED",
   "decision": null,
   "approved_amount": null,
@@ -59,7 +59,7 @@
   "note": "Claim stopped at document verification. See blocking_issues for what to fix.",
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP001, category CONSULTATION, claimed amount 1500.0, with 2 document(s).",
       "data": {
@@ -68,7 +68,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F001: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -78,7 +78,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F002: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -88,7 +88,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "BLOCKED",
       "detail": "You uploaded: PRESCRIPTION, PRESCRIPTION. A CONSULTATION claim requires these document(s): PRESCRIPTION, HOSPITAL_BILL. The following required document(s) are missing: HOSPITAL_BILL. Please upload the missing document(s) and resubmit.",
       "data": {
@@ -102,13 +102,13 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "OK",
       "detail": "All documents are readable.",
       "data": {}
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "OK",
       "detail": "No patient names were present on the documents to compare.",
       "data": {}
@@ -123,7 +123,7 @@
 
 ```json
 {
-  "claim_id": "CLM_DF4A065F",
+  "claim_id": "CLM_DF535999",
   "status": "BLOCKED",
   "decision": null,
   "approved_amount": null,
@@ -146,7 +146,7 @@
   "note": "Claim stopped at document verification. See blocking_issues for what to fix.",
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP004, category PHARMACY, claimed amount 800.0, with 2 document(s).",
       "data": {
@@ -155,7 +155,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F003: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -165,7 +165,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F004: type PHARMACY_BILL (declared by caller).",
       "data": {
@@ -175,7 +175,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "OK",
       "detail": "All required documents present for PHARMACY: PRESCRIPTION, PHARMACY_BILL.",
       "data": {
@@ -186,7 +186,7 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "BLOCKED",
       "detail": "1 document(s) are unreadable and must be re-uploaded.",
       "data": {
@@ -196,7 +196,7 @@
       }
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "OK",
       "detail": "No patient names were present on the documents to compare.",
       "data": {}
@@ -211,7 +211,7 @@
 
 ```json
 {
-  "claim_id": "CLM_FB6F516F",
+  "claim_id": "CLM_6164C836",
   "status": "BLOCKED",
   "decision": null,
   "approved_amount": null,
@@ -236,7 +236,7 @@
   "note": "Claim stopped at document verification. See blocking_issues for what to fix.",
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP001, category CONSULTATION, claimed amount 1500.0, with 2 document(s).",
       "data": {
@@ -245,7 +245,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F005: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -255,7 +255,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F006: type HOSPITAL_BILL (declared by caller).",
       "data": {
@@ -265,7 +265,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "OK",
       "detail": "All required documents present for CONSULTATION: PRESCRIPTION, HOSPITAL_BILL.",
       "data": {
@@ -276,13 +276,13 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "OK",
       "detail": "All documents are readable.",
       "data": {}
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "BLOCKED",
       "detail": "The uploaded documents appear to belong to different patients: the PRESCRIPTION names 'Rajesh Kumar'; the HOSPITAL_BILL names 'Arjun Mehta'. All documents in a single claim must be for the same patient. Please check the documents and resubmit.",
       "data": {
@@ -302,7 +302,7 @@
 
 ```json
 {
-  "claim_id": "CLM_3013E9D1",
+  "claim_id": "CLM_545E6B4E",
   "status": "DECIDED",
   "decision": "APPROVED",
   "approved_amount": 1350.0,
@@ -324,7 +324,7 @@
   "note": null,
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP001, category CONSULTATION, claimed amount 1500.0, with 2 document(s).",
       "data": {
@@ -333,7 +333,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F007: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -343,7 +343,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F008: type HOSPITAL_BILL (declared by caller).",
       "data": {
@@ -353,7 +353,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "OK",
       "detail": "All required documents present for CONSULTATION: PRESCRIPTION, HOSPITAL_BILL.",
       "data": {
@@ -364,19 +364,19 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "OK",
       "detail": "All documents are readable.",
       "data": {}
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "OK",
       "detail": "All documents name the same patient ('Rajesh Kumar').",
       "data": {}
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F007: used caller-provided structured content.",
       "data": {
@@ -385,7 +385,7 @@
       }
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F008: used caller-provided structured content.",
       "data": {
@@ -394,7 +394,7 @@
       }
     },
     {
-      "step": "translate_diagnosis",
+      "step": "normalize_diagnosis",
       "status": "OK",
       "detail": "diagnosis/treatment='Viral Fever' -> waiting_condition=None, excluded_condition=None",
       "data": {
@@ -403,43 +403,43 @@
       }
     },
     {
-      "step": "decide.eligibility",
+      "step": "adjudicate.eligibility",
       "status": "OK",
       "detail": "Member EMP001 (Rajesh Kumar) is covered.",
       "data": {}
     },
     {
-      "step": "decide.exclusions",
+      "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
       "data": {}
     },
     {
-      "step": "decide.waiting_period",
+      "step": "adjudicate.waiting_period",
       "status": "OK",
       "detail": "Outside all applicable waiting periods.",
       "data": {}
     },
     {
-      "step": "decide.pre_auth",
+      "step": "adjudicate.pre_auth",
       "status": "OK",
       "detail": "No pre-authorization requirement triggered.",
       "data": {}
     },
     {
-      "step": "decide.per_claim_limit",
+      "step": "adjudicate.per_claim_limit",
       "status": "OK",
       "detail": "Covered amount 1500 is within the limit of 5000.",
       "data": {}
     },
     {
-      "step": "decide.fraud",
+      "step": "adjudicate.fraud",
       "status": "OK",
       "detail": "No fraud signals.",
       "data": {}
     },
     {
-      "step": "decide.money_math",
+      "step": "adjudicate.financials",
       "status": "OK",
       "detail": "covered 1500 -> network discount 0% -> 1500 -> co-pay 10% -> approved 1350.",
       "data": {
@@ -453,7 +453,7 @@
       }
     },
     {
-      "step": "write_explanation",
+      "step": "explain",
       "status": "OK",
       "detail": "Generated member-facing explanation (template).",
       "data": {
@@ -470,7 +470,7 @@
 
 ```json
 {
-  "claim_id": "CLM_1454344C",
+  "claim_id": "CLM_EEDC1EBA",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
@@ -486,7 +486,7 @@
   "note": "Within the 90-day waiting period for 'diabetes'. Eligible from 2024-11-30.",
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP005, category CONSULTATION, claimed amount 3000.0, with 2 document(s).",
       "data": {
@@ -495,7 +495,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F009: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -505,7 +505,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F010: type HOSPITAL_BILL (declared by caller).",
       "data": {
@@ -515,7 +515,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "OK",
       "detail": "All required documents present for CONSULTATION: PRESCRIPTION, HOSPITAL_BILL.",
       "data": {
@@ -526,19 +526,19 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "OK",
       "detail": "All documents are readable.",
       "data": {}
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "OK",
       "detail": "All documents name the same patient ('Vikram Joshi').",
       "data": {}
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F009: used caller-provided structured content.",
       "data": {
@@ -547,7 +547,7 @@
       }
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F010: used caller-provided structured content.",
       "data": {
@@ -556,7 +556,7 @@
       }
     },
     {
-      "step": "translate_diagnosis",
+      "step": "normalize_diagnosis",
       "status": "OK",
       "detail": "diagnosis/treatment='Type 2 Diabetes Mellitus' -> waiting_condition=diabetes, excluded_condition=None",
       "data": {
@@ -565,25 +565,25 @@
       }
     },
     {
-      "step": "decide.eligibility",
+      "step": "adjudicate.eligibility",
       "status": "OK",
       "detail": "Member EMP005 (Vikram Joshi) is covered.",
       "data": {}
     },
     {
-      "step": "decide.exclusions",
+      "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
       "data": {}
     },
     {
-      "step": "decide.waiting_period",
+      "step": "adjudicate.waiting_period",
       "status": "BLOCKED",
       "detail": "'diabetes' has a 90-day waiting period; member joined 2024-09-01, eligible from 2024-11-30, treatment on 2024-10-15.",
       "data": {}
     },
     {
-      "step": "write_explanation",
+      "step": "explain",
       "status": "OK",
       "detail": "Generated member-facing explanation (template).",
       "data": {
@@ -600,7 +600,7 @@
 
 ```json
 {
-  "claim_id": "CLM_BB35B6D6",
+  "claim_id": "CLM_331992A9",
   "status": "DECIDED",
   "decision": "PARTIAL",
   "approved_amount": 8000.0,
@@ -635,7 +635,7 @@
   "note": null,
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP002, category DENTAL, claimed amount 12000.0, with 1 document(s).",
       "data": {
@@ -644,7 +644,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F011: type HOSPITAL_BILL (declared by caller).",
       "data": {
@@ -654,7 +654,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "OK",
       "detail": "All required documents present for DENTAL: HOSPITAL_BILL.",
       "data": {
@@ -664,19 +664,19 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "OK",
       "detail": "All documents are readable.",
       "data": {}
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "OK",
       "detail": "All documents name the same patient ('Priya Singh').",
       "data": {}
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F011: used caller-provided structured content.",
       "data": {
@@ -685,7 +685,7 @@
       }
     },
     {
-      "step": "translate_diagnosis",
+      "step": "normalize_diagnosis",
       "status": "OK",
       "detail": "diagnosis/treatment='' -> waiting_condition=None, excluded_condition=None",
       "data": {
@@ -694,43 +694,43 @@
       }
     },
     {
-      "step": "decide.eligibility",
+      "step": "adjudicate.eligibility",
       "status": "OK",
       "detail": "Member EMP002 (Priya Singh) is covered.",
       "data": {}
     },
     {
-      "step": "decide.exclusions",
+      "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
       "data": {}
     },
     {
-      "step": "decide.waiting_period",
+      "step": "adjudicate.waiting_period",
       "status": "OK",
       "detail": "Outside all applicable waiting periods.",
       "data": {}
     },
     {
-      "step": "decide.pre_auth",
+      "step": "adjudicate.pre_auth",
       "status": "OK",
       "detail": "No pre-authorization requirement triggered.",
       "data": {}
     },
     {
-      "step": "decide.per_claim_limit",
+      "step": "adjudicate.per_claim_limit",
       "status": "OK",
       "detail": "Covered amount 8000 is within the limit of 10000.",
       "data": {}
     },
     {
-      "step": "decide.fraud",
+      "step": "adjudicate.fraud",
       "status": "OK",
       "detail": "No fraud signals.",
       "data": {}
     },
     {
-      "step": "decide.money_math",
+      "step": "adjudicate.financials",
       "status": "OK",
       "detail": "covered 8000 -> network discount 0% -> 8000 -> co-pay 0% -> approved 8000.",
       "data": {
@@ -744,7 +744,7 @@
       }
     },
     {
-      "step": "write_explanation",
+      "step": "explain",
       "status": "OK",
       "detail": "Generated member-facing explanation (template).",
       "data": {
@@ -761,7 +761,7 @@
 
 ```json
 {
-  "claim_id": "CLM_8E7B81CD",
+  "claim_id": "CLM_1FA4BEF7",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
@@ -777,7 +777,7 @@
   "note": "Pre-authorization is required for MRI above 10000 and was not obtained. Obtain pre-auth and resubmit.",
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP007, category DIAGNOSTIC, claimed amount 15000.0, with 3 document(s).",
       "data": {
@@ -786,7 +786,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F012: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -796,7 +796,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F013: type LAB_REPORT (declared by caller).",
       "data": {
@@ -806,7 +806,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F014: type HOSPITAL_BILL (declared by caller).",
       "data": {
@@ -816,7 +816,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "OK",
       "detail": "All required documents present for DIAGNOSTIC: PRESCRIPTION, LAB_REPORT, HOSPITAL_BILL.",
       "data": {
@@ -828,19 +828,19 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "OK",
       "detail": "All documents are readable.",
       "data": {}
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "OK",
       "detail": "No patient names were present on the documents to compare.",
       "data": {}
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F012: used caller-provided structured content.",
       "data": {
@@ -849,7 +849,7 @@
       }
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F013: used caller-provided structured content.",
       "data": {
@@ -858,7 +858,7 @@
       }
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F014: used caller-provided structured content.",
       "data": {
@@ -867,7 +867,7 @@
       }
     },
     {
-      "step": "translate_diagnosis",
+      "step": "normalize_diagnosis",
       "status": "OK",
       "detail": "diagnosis/treatment='Suspected Lumbar Disc Herniation' -> waiting_condition=None, excluded_condition=None",
       "data": {
@@ -876,31 +876,31 @@
       }
     },
     {
-      "step": "decide.eligibility",
+      "step": "adjudicate.eligibility",
       "status": "OK",
       "detail": "Member EMP007 (Suresh Patil) is covered.",
       "data": {}
     },
     {
-      "step": "decide.exclusions",
+      "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
       "data": {}
     },
     {
-      "step": "decide.waiting_period",
+      "step": "adjudicate.waiting_period",
       "status": "OK",
       "detail": "Outside all applicable waiting periods.",
       "data": {}
     },
     {
-      "step": "decide.pre_auth",
+      "step": "adjudicate.pre_auth",
       "status": "BLOCKED",
       "detail": "MRI above 10000.0 requires pre-authorization; none provided.",
       "data": {}
     },
     {
-      "step": "write_explanation",
+      "step": "explain",
       "status": "OK",
       "detail": "Generated member-facing explanation (template).",
       "data": {
@@ -917,7 +917,7 @@
 
 ```json
 {
-  "claim_id": "CLM_23330E4D",
+  "claim_id": "CLM_E8CD23BF",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
@@ -933,7 +933,7 @@
   "note": "The per-claim limit is 5000; this claim is for 7500.",
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP003, category CONSULTATION, claimed amount 7500.0, with 2 document(s).",
       "data": {
@@ -942,7 +942,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F015: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -952,7 +952,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F016: type HOSPITAL_BILL (declared by caller).",
       "data": {
@@ -962,7 +962,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "OK",
       "detail": "All required documents present for CONSULTATION: PRESCRIPTION, HOSPITAL_BILL.",
       "data": {
@@ -973,19 +973,19 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "OK",
       "detail": "All documents are readable.",
       "data": {}
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "OK",
       "detail": "No patient names were present on the documents to compare.",
       "data": {}
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F015: used caller-provided structured content.",
       "data": {
@@ -994,7 +994,7 @@
       }
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F016: used caller-provided structured content.",
       "data": {
@@ -1003,7 +1003,7 @@
       }
     },
     {
-      "step": "translate_diagnosis",
+      "step": "normalize_diagnosis",
       "status": "OK",
       "detail": "diagnosis/treatment='Gastroenteritis' -> waiting_condition=None, excluded_condition=None",
       "data": {
@@ -1012,37 +1012,37 @@
       }
     },
     {
-      "step": "decide.eligibility",
+      "step": "adjudicate.eligibility",
       "status": "OK",
       "detail": "Member EMP003 (Amit Verma) is covered.",
       "data": {}
     },
     {
-      "step": "decide.exclusions",
+      "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
       "data": {}
     },
     {
-      "step": "decide.waiting_period",
+      "step": "adjudicate.waiting_period",
       "status": "OK",
       "detail": "Outside all applicable waiting periods.",
       "data": {}
     },
     {
-      "step": "decide.pre_auth",
+      "step": "adjudicate.pre_auth",
       "status": "OK",
       "detail": "No pre-authorization requirement triggered.",
       "data": {}
     },
     {
-      "step": "decide.per_claim_limit",
+      "step": "adjudicate.per_claim_limit",
       "status": "BLOCKED",
       "detail": "Covered amount 7500 exceeds the per-claim limit of 5000.",
       "data": {}
     },
     {
-      "step": "write_explanation",
+      "step": "explain",
       "status": "OK",
       "detail": "Generated member-facing explanation (template).",
       "data": {
@@ -1059,7 +1059,7 @@
 
 ```json
 {
-  "claim_id": "CLM_450F8928",
+  "claim_id": "CLM_638CEEE3",
   "status": "DECIDED",
   "decision": "MANUAL_REVIEW",
   "approved_amount": 0.0,
@@ -1077,7 +1077,7 @@
   "note": "Routed to manual review due to fraud signals: SAME_DAY_CLAIMS: 4 claims on 2024-10-30 exceeds limit of 2",
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP008, category CONSULTATION, claimed amount 4800.0, with 2 document(s).",
       "data": {
@@ -1086,7 +1086,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F017: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -1096,7 +1096,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F018: type HOSPITAL_BILL (declared by caller).",
       "data": {
@@ -1106,7 +1106,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "OK",
       "detail": "All required documents present for CONSULTATION: PRESCRIPTION, HOSPITAL_BILL.",
       "data": {
@@ -1117,19 +1117,19 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "OK",
       "detail": "All documents are readable.",
       "data": {}
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "OK",
       "detail": "No patient names were present on the documents to compare.",
       "data": {}
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F017: used caller-provided structured content.",
       "data": {
@@ -1138,7 +1138,7 @@
       }
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F018: used caller-provided structured content.",
       "data": {
@@ -1147,7 +1147,7 @@
       }
     },
     {
-      "step": "translate_diagnosis",
+      "step": "normalize_diagnosis",
       "status": "OK",
       "detail": "diagnosis/treatment='Migraine' -> waiting_condition=None, excluded_condition=None",
       "data": {
@@ -1156,37 +1156,37 @@
       }
     },
     {
-      "step": "decide.eligibility",
+      "step": "adjudicate.eligibility",
       "status": "OK",
       "detail": "Member EMP008 (Ravi Menon) is covered.",
       "data": {}
     },
     {
-      "step": "decide.exclusions",
+      "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
       "data": {}
     },
     {
-      "step": "decide.waiting_period",
+      "step": "adjudicate.waiting_period",
       "status": "OK",
       "detail": "Outside all applicable waiting periods.",
       "data": {}
     },
     {
-      "step": "decide.pre_auth",
+      "step": "adjudicate.pre_auth",
       "status": "OK",
       "detail": "No pre-authorization requirement triggered.",
       "data": {}
     },
     {
-      "step": "decide.per_claim_limit",
+      "step": "adjudicate.per_claim_limit",
       "status": "OK",
       "detail": "Covered amount 4800 is within the limit of 5000.",
       "data": {}
     },
     {
-      "step": "decide.fraud",
+      "step": "adjudicate.fraud",
       "status": "BLOCKED",
       "detail": "SAME_DAY_CLAIMS: 4 claims on 2024-10-30 exceeds limit of 2",
       "data": {
@@ -1196,7 +1196,7 @@
       }
     },
     {
-      "step": "write_explanation",
+      "step": "explain",
       "status": "OK",
       "detail": "Generated member-facing explanation (template).",
       "data": {
@@ -1213,7 +1213,7 @@
 
 ```json
 {
-  "claim_id": "CLM_E40EE21A",
+  "claim_id": "CLM_747F976C",
   "status": "DECIDED",
   "decision": "APPROVED",
   "approved_amount": 3240.0,
@@ -1235,7 +1235,7 @@
   "note": null,
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP010, category CONSULTATION, claimed amount 4500.0, with 2 document(s).",
       "data": {
@@ -1244,7 +1244,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F019: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -1254,7 +1254,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F020: type HOSPITAL_BILL (declared by caller).",
       "data": {
@@ -1264,7 +1264,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "OK",
       "detail": "All required documents present for CONSULTATION: PRESCRIPTION, HOSPITAL_BILL.",
       "data": {
@@ -1275,19 +1275,19 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "OK",
       "detail": "All documents are readable.",
       "data": {}
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "OK",
       "detail": "All documents name the same patient ('Deepak Shah').",
       "data": {}
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F019: used caller-provided structured content.",
       "data": {
@@ -1296,7 +1296,7 @@
       }
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F020: used caller-provided structured content.",
       "data": {
@@ -1305,7 +1305,7 @@
       }
     },
     {
-      "step": "translate_diagnosis",
+      "step": "normalize_diagnosis",
       "status": "OK",
       "detail": "diagnosis/treatment='Acute Bronchitis' -> waiting_condition=None, excluded_condition=None",
       "data": {
@@ -1314,43 +1314,43 @@
       }
     },
     {
-      "step": "decide.eligibility",
+      "step": "adjudicate.eligibility",
       "status": "OK",
       "detail": "Member EMP010 (Deepak Shah) is covered.",
       "data": {}
     },
     {
-      "step": "decide.exclusions",
+      "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
       "data": {}
     },
     {
-      "step": "decide.waiting_period",
+      "step": "adjudicate.waiting_period",
       "status": "OK",
       "detail": "Outside all applicable waiting periods.",
       "data": {}
     },
     {
-      "step": "decide.pre_auth",
+      "step": "adjudicate.pre_auth",
       "status": "OK",
       "detail": "No pre-authorization requirement triggered.",
       "data": {}
     },
     {
-      "step": "decide.per_claim_limit",
+      "step": "adjudicate.per_claim_limit",
       "status": "OK",
       "detail": "Covered amount 4500 is within the limit of 5000.",
       "data": {}
     },
     {
-      "step": "decide.fraud",
+      "step": "adjudicate.fraud",
       "status": "OK",
       "detail": "No fraud signals.",
       "data": {}
     },
     {
-      "step": "decide.money_math",
+      "step": "adjudicate.financials",
       "status": "OK",
       "detail": "covered 4500 -> network discount 20% -> 3600 -> co-pay 10% -> approved 3240.",
       "data": {
@@ -1364,7 +1364,7 @@
       }
     },
     {
-      "step": "write_explanation",
+      "step": "explain",
       "status": "OK",
       "detail": "Generated member-facing explanation (template).",
       "data": {
@@ -1381,7 +1381,7 @@
 
 ```json
 {
-  "claim_id": "CLM_62B0EF90",
+  "claim_id": "CLM_752EF998",
   "status": "DECIDED",
   "decision": "APPROVED",
   "approved_amount": 4000.0,
@@ -1403,7 +1403,7 @@
   "note": "A processing component failed and was skipped; manual review is recommended due to incomplete processing.",
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP006, category ALTERNATIVE_MEDICINE, claimed amount 4000.0, with 2 document(s).",
       "data": {
@@ -1412,7 +1412,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F021: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -1422,7 +1422,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F022: type HOSPITAL_BILL (declared by caller).",
       "data": {
@@ -1432,7 +1432,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "OK",
       "detail": "All required documents present for ALTERNATIVE_MEDICINE: PRESCRIPTION, HOSPITAL_BILL.",
       "data": {
@@ -1443,27 +1443,27 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "OK",
       "detail": "All documents are readable.",
       "data": {}
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "OK",
       "detail": "No patient names were present on the documents to compare.",
       "data": {}
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "FAILED",
-      "detail": "Simulated component failure: reading skipped. Continuing with available data; confidence reduced.",
+      "detail": "Simulated component failure: extraction skipped. Continuing with available data; confidence reduced.",
       "data": {
         "degraded": true
       }
     },
     {
-      "step": "translate_diagnosis",
+      "step": "normalize_diagnosis",
       "status": "OK",
       "detail": "diagnosis/treatment='Chronic Joint Pain | Panchakarma Therapy' -> waiting_condition=None, excluded_condition=None",
       "data": {
@@ -1472,43 +1472,43 @@
       }
     },
     {
-      "step": "decide.eligibility",
+      "step": "adjudicate.eligibility",
       "status": "OK",
       "detail": "Member EMP006 (Kavita Nair) is covered.",
       "data": {}
     },
     {
-      "step": "decide.exclusions",
+      "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
       "data": {}
     },
     {
-      "step": "decide.waiting_period",
+      "step": "adjudicate.waiting_period",
       "status": "OK",
       "detail": "Outside all applicable waiting periods.",
       "data": {}
     },
     {
-      "step": "decide.pre_auth",
+      "step": "adjudicate.pre_auth",
       "status": "OK",
       "detail": "No pre-authorization requirement triggered.",
       "data": {}
     },
     {
-      "step": "decide.per_claim_limit",
+      "step": "adjudicate.per_claim_limit",
       "status": "OK",
       "detail": "Covered amount 4000 is within the limit of 8000.",
       "data": {}
     },
     {
-      "step": "decide.fraud",
+      "step": "adjudicate.fraud",
       "status": "OK",
       "detail": "No fraud signals.",
       "data": {}
     },
     {
-      "step": "decide.money_math",
+      "step": "adjudicate.financials",
       "status": "OK",
       "detail": "covered 4000 -> network discount 0% -> 4000 -> co-pay 0% -> approved 4000.",
       "data": {
@@ -1522,7 +1522,7 @@
       }
     },
     {
-      "step": "write_explanation",
+      "step": "explain",
       "status": "OK",
       "detail": "Generated member-facing explanation (template).",
       "data": {
@@ -1539,7 +1539,7 @@
 
 ```json
 {
-  "claim_id": "CLM_5DBC4C46",
+  "claim_id": "CLM_2F768231",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
@@ -1555,7 +1555,7 @@
   "note": "This claim is for an excluded condition: 'Obesity and weight loss programs'.",
   "trace": [
     {
-      "step": "find_member",
+      "step": "intake",
       "status": "OK",
       "detail": "Claim received for member EMP009, category CONSULTATION, claimed amount 8000.0, with 2 document(s).",
       "data": {
@@ -1564,7 +1564,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F023: type PRESCRIPTION (declared by caller).",
       "data": {
@@ -1574,7 +1574,7 @@
       }
     },
     {
-      "step": "label_documents",
+      "step": "classify",
       "status": "OK",
       "detail": "F024: type HOSPITAL_BILL (declared by caller).",
       "data": {
@@ -1584,7 +1584,7 @@
       }
     },
     {
-      "step": "check.required_documents",
+      "step": "verify.required_documents",
       "status": "OK",
       "detail": "All required documents present for CONSULTATION: PRESCRIPTION, HOSPITAL_BILL.",
       "data": {
@@ -1595,19 +1595,19 @@
       }
     },
     {
-      "step": "check.readability",
+      "step": "verify.readability",
       "status": "OK",
       "detail": "All documents are readable.",
       "data": {}
     },
     {
-      "step": "check.same_patient",
+      "step": "verify.patient_consistency",
       "status": "OK",
       "detail": "No patient names were present on the documents to compare.",
       "data": {}
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F023: used caller-provided structured content.",
       "data": {
@@ -1616,7 +1616,7 @@
       }
     },
     {
-      "step": "read_documents",
+      "step": "extract",
       "status": "OK",
       "detail": "F024: used caller-provided structured content.",
       "data": {
@@ -1625,7 +1625,7 @@
       }
     },
     {
-      "step": "translate_diagnosis",
+      "step": "normalize_diagnosis",
       "status": "OK",
       "detail": "diagnosis/treatment='Morbid Obesity \u2014 BMI 37 | Bariatric Consultation and Customised Diet Plan' -> waiting_condition=obesity_treatment, excluded_condition=Obesity and weight loss programs",
       "data": {
@@ -1634,19 +1634,19 @@
       }
     },
     {
-      "step": "decide.eligibility",
+      "step": "adjudicate.eligibility",
       "status": "OK",
       "detail": "Member EMP009 (Anita Desai) is covered.",
       "data": {}
     },
     {
-      "step": "decide.exclusions",
+      "step": "adjudicate.exclusions",
       "status": "BLOCKED",
       "detail": "Diagnosis/treatment matches a policy exclusion: 'Obesity and weight loss programs'.",
       "data": {}
     },
     {
-      "step": "write_explanation",
+      "step": "explain",
       "status": "OK",
       "detail": "Generated member-facing explanation (template).",
       "data": {

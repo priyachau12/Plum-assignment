@@ -17,7 +17,7 @@ def test_tc001_blocks_with_missing_document(client):
     assert body["decision"] is None
     reasons = {i["reason"] for i in body["blocking_issues"]}
     assert "MISSING_REQUIRED_DOCUMENT" in reasons
-    assert any(t["step"] == "find_member" for t in body["trace"])
+    assert any(t["step"] == "intake" for t in body["trace"])
 
 
 def test_tc002_blocks_with_unreadable_document(client):

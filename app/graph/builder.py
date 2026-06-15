@@ -1,17 +1,17 @@
 """Pipeline builder — wires the claim-processing line.
 
-    START -> find_member -> label_documents -> check_documents -->(stop)--> END
-                                                     \\
-                                                      -->(continue)--> read_documents
-                                                         -> translate_diagnosis
-                                                         -> decide_claim -> write_explanation -> END
+    START -> intake -> classify -> verify_documents -->(stop)--> END
+                                            \\
+                                             -->(continue)--> extract
+                                                -> normalize_diagnosis
+                                                -> adjudicate -> explain -> END
 
 Why this shape
 --------------
-- The fork after `check_documents` is the early-stop gate: a claim with a
+- The fork after `verify_documents` is the early-stop gate: a claim with a
   document problem ends immediately with a specific message (TC001-TC003) and
-  never reaches reading or the decision.
-- The clean path reads the documents, translates the diagnosis, runs the
+  never reaches extraction or the decision.
+- The clean path extracts the documents, normalizes the diagnosis, runs the
   deterministic decision rules, and writes the explanation.
 
 Dependency binding
@@ -30,13 +30,13 @@ from functools import partial
 
 from langgraph.graph import END, START, StateGraph
 
-from app.graph.nodes.check_documents import check_documents
-from app.graph.nodes.decide_claim import decide_claim
-from app.graph.nodes.find_member import find_member
-from app.graph.nodes.label_documents import label_documents
-from app.graph.nodes.read_documents import read_documents
-from app.graph.nodes.translate_diagnosis import translate_diagnosis
-from app.graph.nodes.write_explanation import write_explanation
+from app.graph.nodes.adjudicate import adjudicate
+from app.graph.nodes.classify import classify
+from app.graph.nodes.explain import explain
+from app.graph.nodes.extract import extract
+from app.graph.nodes.intake import intake
+from app.graph.nodes.normalize_diagnosis import normalize_diagnosis
+from app.graph.nodes.verify_documents import verify_documents
 from app.graph.state import ClaimState
 from app.llm.client import LLMClient
 from app.models.policy import Policy
@@ -44,8 +44,8 @@ from app.models.policy import Policy
 logger = logging.getLogger(__name__)
 
 
-def _after_document_check(state: ClaimState) -> str:
-    """The fork: a blocked claim stops; a clean one continues to reading."""
+def _after_document_verification(state: ClaimState) -> str:
+    """The fork: a blocked claim stops; a clean one continues to extraction."""
     return "stop" if state.get("blocking_issues") else "continue"
 
 
@@ -54,31 +54,31 @@ def build_graph(policy: Policy, llm: LLMClient | None = None):
     graph = StateGraph(ClaimState)
 
     # Deterministic steps get the policy; AI steps get the (optional) client.
-    graph.add_node("find_member", partial(find_member, policy=policy))
-    graph.add_node("label_documents", partial(label_documents, llm=llm))
-    graph.add_node("check_documents", partial(check_documents, policy=policy))
-    graph.add_node("read_documents", partial(read_documents, llm=llm))
-    graph.add_node("translate_diagnosis", partial(translate_diagnosis, policy=policy))
-    graph.add_node("decide_claim", partial(decide_claim, policy=policy))
-    graph.add_node("write_explanation", partial(write_explanation, llm=llm))
+    graph.add_node("intake", partial(intake, policy=policy))
+    graph.add_node("classify", partial(classify, llm=llm))
+    graph.add_node("verify_documents", partial(verify_documents, policy=policy))
+    graph.add_node("extract", partial(extract, llm=llm))
+    graph.add_node("normalize_diagnosis", partial(normalize_diagnosis, policy=policy))
+    graph.add_node("adjudicate", partial(adjudicate, policy=policy))
+    graph.add_node("explain", partial(explain, llm=llm))
 
-    graph.add_edge(START, "find_member")
-    graph.add_edge("find_member", "label_documents")
-    graph.add_edge("label_documents", "check_documents")
+    graph.add_edge(START, "intake")
+    graph.add_edge("intake", "classify")
+    graph.add_edge("classify", "verify_documents")
     graph.add_conditional_edges(
-        "check_documents",
-        _after_document_check,
-        {"stop": END, "continue": "read_documents"},
+        "verify_documents",
+        _after_document_verification,
+        {"stop": END, "continue": "extract"},
     )
-    graph.add_edge("read_documents", "translate_diagnosis")
-    graph.add_edge("translate_diagnosis", "decide_claim")
-    graph.add_edge("decide_claim", "write_explanation")
-    graph.add_edge("write_explanation", END)
+    graph.add_edge("extract", "normalize_diagnosis")
+    graph.add_edge("normalize_diagnosis", "adjudicate")
+    graph.add_edge("adjudicate", "explain")
+    graph.add_edge("explain", END)
 
     compiled = graph.compile()
     logger.info(
-        "Claim pipeline compiled: find_member -> label_documents -> check_documents -> "
-        "{stop: END | continue: read_documents -> translate_diagnosis -> decide_claim "
-        "-> write_explanation -> END}"
+        "Claim pipeline compiled: intake -> classify -> verify_documents -> "
+        "{stop: END | continue: extract -> normalize_diagnosis -> adjudicate "
+        "-> explain -> END}"
     )
     return compiled

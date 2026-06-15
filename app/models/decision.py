@@ -14,9 +14,9 @@ what we return. Pydantic types make the response validated and self-documenting.
 Interactions
 ------------
 - Nodes append `TraceEntry` to `state["trace"]`.
-- `verification/document_checks.py` builds `BlockingIssue`s.
-- `rules/diagnosis_matcher.py` builds `DiagnosisMatch`.
-- `rules/decision_rules.py` builds `DecisionResult`.
+- `verification/document_verifier.py` builds `BlockingIssue`s.
+- `rules/normalization.py` builds `DiagnosisMatch`.
+- `rules/engine.py` builds `DecisionResult`.
 - `api/routes_claims.py` returns a `ClaimProcessingResult`.
 """
 

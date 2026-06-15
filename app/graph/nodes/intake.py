@@ -1,4 +1,4 @@
-"""find_member node — the pipeline's first step.
+"""intake node — the pipeline's first step.
 
 Opens the audit trail and looks up the member in the loaded policy. It does not
 decide anything; it records context every later step (and the reviewer) relies
@@ -19,12 +19,12 @@ from app.models.policy import Policy
 logger = logging.getLogger(__name__)
 
 
-def find_member(state: ClaimState, *, policy: Policy) -> dict:
+def intake(state: ClaimState, *, policy: Policy) -> dict:
     request = state["request"]
     member = policy.get_member(request.member_id)
 
     logger.info(
-        "find_member: member=%s category=%s amount=%s docs=%d",
+        "intake: member=%s category=%s amount=%s docs=%d",
         request.member_id,
         request.claim_category.value,
         request.claimed_amount,
@@ -33,7 +33,7 @@ def find_member(state: ClaimState, *, policy: Policy) -> dict:
 
     entries: list[TraceEntry] = [
         TraceEntry(
-            step="find_member",
+            step="intake",
             status=TraceStatus.OK,
             detail=(
                 f"Claim received for member {request.member_id}, category "
@@ -50,7 +50,7 @@ def find_member(state: ClaimState, *, policy: Policy) -> dict:
     if member is None:
         entries.append(
             TraceEntry(
-                step="find_member.lookup",
+                step="intake.lookup",
                 status=TraceStatus.FAILED,
                 detail=f"Member {request.member_id} was not found in the policy roster.",
             )
@@ -58,7 +58,7 @@ def find_member(state: ClaimState, *, policy: Policy) -> dict:
     elif request.policy_id != policy.policy_id:
         entries.append(
             TraceEntry(
-                step="find_member.policy_match",
+                step="intake.policy_match",
                 status=TraceStatus.FAILED,
                 detail=(
                     f"Claim policy_id '{request.policy_id}' does not match the loaded "

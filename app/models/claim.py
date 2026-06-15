@@ -15,7 +15,7 @@ Interactions
 ------------
 - `api/routes_claims.py` declares a `ClaimRequest` parameter (FastAPI validates).
 - `graph/state.py` carries the `ClaimRequest` through the pipeline.
-- `verification/document_checks.py` reads documents off it.
+- `verification/document_verifier.py` reads documents off it.
 
 Modeling notes
 --------------
@@ -25,8 +25,8 @@ Modeling notes
     (a) JSON with `actual_type` + pre-extracted `content` — the deterministic
         path the 12 test cases use; or
     (b) a real upload (image/PDF) carried as `data_base64` + `media_type` with
-        `actual_type` left unset — the vision path, where `label_documents`
-        classifies it and `read_documents` extracts its fields with the LLM.
+        `actual_type` left unset — the vision path, where `classify`
+        classifies it and `extract` extracts its fields with the LLM.
   `actual_type` is therefore optional: declared by the caller, or resolved by
   vision before the document-verification gate runs.
 - Optional fields (`hospital_name`, `ytd_claims_amount`, `claims_history`,
@@ -78,7 +78,7 @@ class Document(BaseModel):
     """One uploaded document plus the metadata needed to verify it.
 
     `actual_type` is optional: the caller may declare it (JSON path) or it is
-    resolved by the vision classifier in `label_documents` for real uploads.
+    resolved by the vision classifier in `classify` for real uploads.
     `data_base64`/`media_type` carry the raw file bytes for the vision path.
     """
 
