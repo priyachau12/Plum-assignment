@@ -34,8 +34,12 @@ File name: {file_name}
 """
 
 EXPLANATION_PROMPT = """Rewrite the following claim decision as a clear, friendly,
-2-4 sentence explanation for the member. Do not change any numbers or the
-decision. Be specific about amounts and reasons.
+2-4 sentence explanation for the member. Output ONLY the explanation text — no
+preamble, no greeting, no markdown headers. Do not change any numbers or the
+decision. Use the Indian rupee sign (Rs.) for every amount; never use $. Be
+specific about amounts and reasons. If the factual summary contains a caveat or
+recommendation (for example that the claim is provisional or that manual review
+is recommended), you MUST keep it — do not imply the payout is final when it is not.
 
 Decision: {decision}
 Approved amount: {approved_amount}

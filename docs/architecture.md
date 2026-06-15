@@ -1,6 +1,6 @@
 # Architecture — Health Insurance Claims Processing System
 
-> **Status:** living document, updated every phase. **Phase 1 baseline.**
+> **Status:** living document, kept in sync with the implementation.
 > **Scope:** this is the master design document — problem, approach, decisions,
 > tech stack, pipeline, flow, rule engine, observability, failure handling,
 > scaling, risks, and the 12 test-case flows.
@@ -69,11 +69,12 @@ Derived from the assignment and mapped to the grading weights:
 | Make a deterministic claim decision | System Design (30%) | Pure, ordered **rule engine** (`adjudicate`). |
 | Make every decision explainable | Observability (20%) | A single `trace` accumulated through the graph; embedded in the response. |
 | Handle failures gracefully (no crash) | System Design / Engineering | Per-node try/except → trace + degrade confidence, never 500. |
-| UI for submission and review | Engineering | Built in a later phase. |
+| UI for submission and review | Engineering | Single-page UI at `/` (upload + JSON modes), `/sample-claims`. |
 
 **Hard constraint:** *policy decisions must be deterministic*; LLMs are used
-**only** for classification, extraction, diagnosis normalization, and
-explanation generation.
+**only** for classification, extraction, and explanation generation. Diagnosis
+normalization is **deterministic** (keyword/word-boundary matching against the
+policy's own vocabulary), so the decision stays fully reproducible.
 
 ---
 
@@ -86,8 +87,8 @@ explanation generation.
 
 | Stage | Owner | Examples |
 |---|---|---|
-| **Perception** (messy → structured) | LLM | classify document type, extract fields, normalize `"Type 2 Diabetes Mellitus"` → `diabetes` |
-| **Cognition** (structured → decision) | Deterministic rule engine | waiting periods, exclusions, pre-auth, limits, co-pay math, fraud |
+| **Perception** (messy → structured) | LLM | classify document type, extract fields from images/PDFs |
+| **Cognition** (structured → decision) | Deterministic code | normalize `"Type 2 Diabetes Mellitus"` → `diabetes`; waiting periods, exclusions, pre-auth, limits, co-pay math, fraud |
 | **Communication** (decision → human) | LLM | member-facing explanation generated *from the trace* |
 
 The LLM **never decides**. Every LLM output is validated by a Pydantic schema
@@ -175,21 +176,25 @@ Each node is a single-responsibility step. `(det)` = deterministic, `(LLM)` =
 model call with a deterministic bypass when test `content` is injected and a
 graceful-failure wrapper.
 
+The seven graph nodes (file names match exactly, one file per node in
+`app/graph/nodes/`):
+
 | # | Node | Type | Input | Output | On failure |
 |---|---|---|---|---|---|
-| 1 | `intake` | det | raw request | validated claim, resolved member + policy, trace initialized | invalid request → 422 before graph |
-| 2 | `classify` | LLM | each document | `{file_id, type, confidence}` | fall back to provided `actual_type` |
-| 3 | `verify` | det | docs + types + quality + patient names | pass, or **blocking issues** | n/a (pure) |
-| — | `halt` | det | blocking issues | specific, actionable member message | n/a |
-| 4 | `extract` | LLM | each document | structured `content` per type | use injected `content`; else flag fields LOW |
-| 5 | `normalize_dx` | LLM | free-text diagnosis | canonical policy key (e.g. `diabetes`) | unmapped → flag → MANUAL_REVIEW |
+| 1 | `intake` | det | raw request | resolved member, trace initialized | invalid request → 422 before graph |
+| 2 | `classify` | LLM | each document | resolved type / readability / patient on the doc | trust declared `actual_type`; vision error → trace failed |
+| 3 | `verify_documents` | det | docs + types + quality + patient names | pass, or **blocking issues** (+ status BLOCKED) | n/a (pure) |
+| 4 | `extract` | LLM | each document | `extracted_content` + extraction-quality signal | use injected `content`; else Pydantic-validate AI output, degrade on failure |
+| 5 | `normalize_diagnosis` | det | free-text diagnosis | canonical policy key (e.g. `diabetes`) | unmapped → no key (coverage still decided by category) |
 | 6 | `adjudicate` | det | claim + policy + normalized data | decision + amount + per-line reasons + confidence | runs on whatever data exists |
-| 7 | `explain` | LLM | the trace + decision | member-facing explanation string | template fallback from trace |
-| 8 | `respond` | det | full state | `ClaimDecision` payload | n/a |
+| 7 | `explain` | LLM | the decision | member-facing explanation string | template fallback from the decision |
 
-The **early-stop gate** is node 3 (`verify`): a conditional edge routes blocking
-issues to `halt` (which builds the specific message and ends), otherwise to
-`extract`. This is what makes TC001–TC003 stop *before* any decision.
+The **early-stop gate** is node 3 (`verify_documents`): a conditional edge
+(`_after_document_verification` in `builder.py`) routes a claim with blocking
+issues straight to `END`, otherwise to `extract`. This is what makes TC001–TC003
+stop *before* any decision. The API layer (`routes_claims._run_pipeline`)
+assembles the final `ClaimProcessingResult` from the end state — it is not a
+graph node.
 
 ---
 
@@ -199,29 +204,30 @@ issues to `halt` (which builds the specific message and ends), otherwise to
 
 ```
 POST /claims
-  └─ intake      ✓ member EMP001 found, policy active, trace started
-  └─ classify    ✓ PRESCRIPTION + HOSPITAL_BILL  (or use provided types)
-  └─ verify      ✓ required docs present, readable, same patient
-  └─ extract     ✓ fields (or use injected content)
-  └─ normalize   ✓ "Viral Fever" → no waiting/exclusion key
-  └─ adjudicate  ✓ covered; 10% co-pay on ₹1500 = ₹150
-  └─ explain     ✓ "Approved ₹1350 after 10% consultation co-pay…"
-  └─ respond     → { decision: APPROVED, approved_amount: 1350,
-                     confidence: 0.9x, trace: [...8 entries...] }
+  └─ intake             ✓ member EMP001 found, policy active, trace started
+  └─ classify           ✓ PRESCRIPTION + HOSPITAL_BILL  (or use provided types)
+  └─ verify_documents   ✓ required docs present, readable, same patient
+  └─ extract            ✓ fields (or use injected content)
+  └─ normalize_diagnosis ✓ "Viral Fever" → no waiting/exclusion key
+  └─ adjudicate         ✓ covered; 10% co-pay on ₹1500 = ₹150 (every rule traced)
+  └─ explain            ✓ "Your claim was APPROVED for Rs.1350…"
+  (API assembles) → { decision: APPROVED, approved_amount: 1350,
+                      confidence: 0.95, trace: [...full trace...] }
 ```
 
 ### 7.2 Early-stop path (e.g. TC001 — wrong document)
 
 ```
 POST /claims
-  └─ intake      ✓
-  └─ classify    ✓ two PRESCRIPTIONs
-  └─ verify      ✗ BLOCKING: CONSULTATION requires [PRESCRIPTION, HOSPITAL_BILL];
-                   got 2× PRESCRIPTION, missing HOSPITAL_BILL
-  └─ halt        → message: "You uploaded a PRESCRIPTION where a HOSPITAL_BILL
-                   is required for a consultation claim. Please upload the
-                   hospital bill and resubmit."
-  └─ respond     → { decision: null, blocking_issue: {...}, trace: [...] }
+  └─ intake            ✓
+  └─ classify          ✓ two PRESCRIPTIONs
+  └─ verify_documents  ✗ BLOCKING (status=BLOCKED), conditional edge → END
+                         message: "You uploaded: PRESCRIPTION, PRESCRIPTION. A
+                         CONSULTATION claim requires these document(s):
+                         PRESCRIPTION, HOSPITAL_BILL. The following required
+                         document(s) are missing: HOSPITAL_BILL. Please upload
+                         the missing document(s) and resubmit."
+  (API assembles) → { decision: null, blocking_issues: [...], trace: [...] }
        (extract / adjudicate / explain are never reached)
 ```
 
@@ -229,16 +235,16 @@ POST /claims
 
 ```
 POST /claims
-  └─ intake      ✓
-  └─ classify    ✓
-  └─ verify      ✓
-  └─ extract     ⚠ simulate_component_failure → node raises, caught:
-                   trace entry status=failed, degraded=true, confidence penalty
-  └─ normalize   ✓ (runs on whatever was extracted)
-  └─ adjudicate  ✓ produces a decision from available data
-  └─ explain     ✓ + "manual review recommended due to incomplete processing"
-  └─ respond     → { decision: APPROVED, confidence: <normal,
-                     degraded: true, notes: "...component X skipped..." }
+  └─ intake             ✓
+  └─ classify           ✓
+  └─ verify_documents   ✓
+  └─ extract            ⚠ simulate_component_failure → skipped, caught:
+                          trace entry status=FAILED, degraded=true
+  └─ normalize_diagnosis ✓ (runs on whatever content exists)
+  └─ adjudicate         ✓ produces a decision; degraded → confidence 0.65
+  └─ explain            ✓ + "manual review recommended due to incomplete processing"
+  (API assembles) → { decision: APPROVED, confidence: 0.65,
+                      degraded: true, note: "...component failed and was skipped..." }
 ```
 
 No node failure becomes a 500; it becomes a trace entry plus a confidence
@@ -252,24 +258,34 @@ penalty.
 `(claim, policy) -> RuleResult` where `RuleResult` carries a verdict, a reason
 code, a human reason, and a trace entry. Ordering encodes precedence.
 
+The exact order in `app/rules/engine.py:adjudicate` (each rule writes a
+`adjudicate.<name>` trace entry whether or not it fires):
+
 | Order | Rule | Reads from policy | Verdict on hit | Test |
 |---|---|---|---|---|
-| 1 | **Eligibility** | `members`, `policy_holder` | REJECT (not eligible) | — |
-| 2 | **Submission window / min amount** | `submission_rules` | REJECT | — |
-| 3 | **Waiting periods** | `waiting_periods` (+ `normalize_dx`) | REJECT | TC005 |
-| 4 | **Exclusions** (whole claim) | `exclusions.conditions` | REJECT | TC012 |
-| 4b | **Exclusions** (line-item) | category `excluded_procedures/items` | PARTIAL | TC006 |
-| 5 | **Pre-authorization** | `pre_authorization`, category thresholds | REJECT | TC007 |
-| 6 | **Limits** (per-claim, sub-limit, annual OPD) | `coverage`, category `sub_limit` | REJECT or cap | TC008 |
+| 1 | **Eligibility** | `members` | REJECT NOT_ELIGIBLE | — |
+| 1b | **Minimum claim amount** | `submission_rules.minimum_claim_amount` | REJECT BELOW_MINIMUM | — |
+| 1c | **Submission deadline** (only if `submission_date` given) | `submission_rules.deadline_days_from_treatment` | REJECT SUBMISSION_WINDOW_EXCEEDED | — |
+| 2 | **Exclusions** (whole claim) | `exclusions.conditions` | REJECT EXCLUDED_CONDITION | TC012 |
+| 3 | **Waiting periods** | `waiting_periods` (+ `normalize_diagnosis`) | REJECT WAITING_PERIOD | TC005 |
+| 4 | **Pre-authorization** | category `high_value_tests…`, `pre_auth_threshold` | REJECT PRE_AUTH_MISSING | TC007 |
+| 5 | **Per-claim limit** | `coverage.per_claim_limit`, category `sub_limit` | REJECT PER_CLAIM_EXCEEDED | TC008 |
+| 6 | **Line-item exclusions** | category `excluded_procedures/items` | PARTIAL (or REJECT if all excluded) | TC006 |
 | 7 | **Fraud signals** | `fraud_thresholds`, `claims_history` | MANUAL_REVIEW | TC009 |
 | 8 | **High-value auto review** | `fraud_thresholds.auto_manual_review_above` | MANUAL_REVIEW | — |
+| 8b | **Annual OPD limit** | `coverage.annual_opd_limit` − `ytd_claims_amount` | REJECT ANNUAL_LIMIT_EXCEEDED (or cap) | — |
 | 9 | **Financial computation** | category `network_discount_percent`, `copay_percent` | compute approved amount | TC004, TC010 |
 
-**Decision precedence** (when multiple fire): hard **REJECT** >
-**MANUAL_REVIEW** > **PARTIAL** > **APPROVED**. A waiting-period or exclusion
-rejection always wins over a fraud flag, etc. Each rule appends its trace entry
-regardless of whether it changed the outcome, so the trace shows *everything
-that was checked*, not just the deciding rule.
+**Exclusions are checked BEFORE waiting periods (Rule 2 before Rule 3)** — this
+is deliberate. Obesity is both excludable and has a waiting period; checking
+exclusions first means TC012 returns `EXCLUDED_CONDITION` (permanent, "never
+covered"), not `WAITING_PERIOD` (which would wrongly imply "come back later").
+
+The engine **early-exits at the first blocking rule** and returns; the implicit
+precedence is therefore the rule order above. Every rule still appends its trace
+entry up to the deciding one, so the trace shows what was checked. (A low final
+confidence on an otherwise-approvable claim also routes to MANUAL_REVIEW — see
+§10.)
 
 ---
 
@@ -278,15 +294,22 @@ that was checked*, not just the deciding rule.
 TC010 makes the order explicit and gradeable:
 
 ```
-covered_base                         = sum of covered line items
-after_network_discount               = covered_base × (1 − network_discount%)   ← FIRST
-after_copay                          = after_network_discount × (1 − copay%)     ← SECOND
-approved_amount                      = min(after_copay, sub_limit, per_claim_limit,
-                                           remaining_annual_opd_limit)            ← caps last
+covered_base            = sum of covered line items (or claimed_amount)
+after_network_discount  = covered_base × (1 − network_discount%)          ← FIRST
+after_copay             = after_network_discount × (1 − copay%)            ← SECOND
+effective_cap           = max(per_claim_limit, category sub_limit)
+approved_amount         = min(after_copay, effective_cap, remaining_annual_opd) ← caps last
 ```
 
+**Why `effective_cap` is `max(per_claim_limit, sub_limit)`, not a `min`.** The
+base per-claim limit is ₹5,000, but some categories allow *more* (dental's
+sub-limit is ₹10,000). TC010 approves ₹3,240 for a consultation whose sub-limit
+is ₹2,000 — so the sub-limit cannot be a hard upper bound on the payout; it
+*raises* the cap for higher-allowance categories. (`financials.compute_financials`
+implements this; `remaining_annual_opd = annual_opd_limit − ytd_claims_amount`.)
+
 Worked example (TC010, Apollo network, consultation):
-`4500 → ×0.80 = 3600 (discount) → ×0.90 = 3240 (co-pay) → within limits → ₹3240`.
+`4500 → ×0.80 = 3600 (discount) → ×0.90 = 3240 (co-pay) → within caps → ₹3240`.
 
 Worked example (TC004, non-network consultation): `1500 → no discount →
 ×0.90 = 1350 → ₹1350`.
@@ -299,42 +322,53 @@ The breakdown (each multiplier and cap) is written to the trace so the
 ## 10. Confidence scoring
 
 A single confidence in `[0, 1]` attached to every decision, composed
-deterministically from:
+deterministically in `engine._confidence_score`:
 
-- **Decision determinism** — pure-rule rejections (waiting period, exclusion,
-  per-claim limit) are near-certain (≈0.95+); TC012 expects > 0.90, TC004 > 0.85.
-- **Extraction quality** — average field-extraction confidence from the
-  `extract`/`classify` nodes drags the score down when documents were poor.
-- **Degradation penalty** — any failed/skipped node applies a fixed penalty and
-  forces a "manual review recommended" note (TC011).
-- **Ambiguity penalty** — unmapped diagnosis or conflicting fields lower it.
+```
+confidence = base
+           − 0.30                      if degraded (a node failed/was skipped)
+           − (1 − extraction_conf)×0.40   extraction-quality penalty (vision path)
+           − 0.10                      if ambiguous (no diagnosis text AND no bill lines)
+```
 
-Confidence is *informational + routing*: very low confidence on an otherwise
-APPROVED claim can itself route to MANUAL_REVIEW. The exact formula lives in the
-rule engine (a later phase) and is unit-tested against the expected bounds.
+- **base (decision determinism)** — `0.95` for clear-cut rule outcomes
+  (APPROVED/PARTIAL/REJECTED), `0.90` for MANUAL_REVIEW. TC012 → 0.95 (> 0.90),
+  TC004 → 0.95 (> 0.85).
+- **Extraction quality** — on the real vision path, `extract` computes an
+  average field-extraction completeness per document and passes it through;
+  poor documents lower the score. On the inject-`content` path it is `1.0`, so
+  the deterministic eval is stable.
+- **Degradation penalty** — a failed/skipped node costs `0.30` and adds a
+  "manual review recommended" note (TC011 → `0.95 − 0.30 = 0.65`).
+- **Ambiguity penalty** — only when there is genuinely nothing to reason about
+  (no diagnosis/treatment text *and* no itemized bill lines); a dental bill with
+  line items but no diagnosis field is **not** ambiguous (TC006 stays 0.95).
+
+Confidence is *informational + routing*: an otherwise-approvable claim with
+confidence below `0.50` is routed to MANUAL_REVIEW rather than auto-approved
+(`_LOW_CONFIDENCE_THRESHOLD`). Unit-tested against the expected bounds in
+`tests/test_rules.py`.
 
 ---
 
 ## 11. Data model
 
-**Phase 1 (built):** `app/models/policy.py` — a validated Pydantic tree mirroring
-`policy_terms.json`, plus normalized lookups (`get_member`, `get_category`,
-`document_requirement`) that absorb the file's casing inconsistencies in one
-tested place.
-
-**Phase 2 (built):**
+- `app/models/policy.py` — a validated Pydantic tree mirroring `policy_terms.json`,
+  plus normalized lookups (`get_member`, `get_category`, `document_requirement`)
+  that absorb the file's casing inconsistencies in one tested place.
 - `claim.py` — `ClaimRequest` (member_id, policy_id, category, treatment_date,
-  claimed_amount, optional hospital_name / ytd_claims_amount / claims_history,
-  documents[]) and `Document` (file_id, actual_type, optional quality / content /
-  patient_name_on_doc) — modeled to accept exactly what `test_cases.json`
-  provides. Enums for category / document type / quality.
+  claimed_amount, optional hospital_name / ytd_claims_amount / claims_history /
+  `submission_date`, documents[]) and `Document` (file_id, actual_type, optional
+  quality / content / patient_name_on_doc, and `media_type`/`data_base64` for real
+  uploads). Enums for category / document type / quality.
 - `decision.py` — `Decision` enum, `TraceEntry`/`TraceStatus`,
-  `BlockingIssue`/`BlockingReason`, `ProcessingStatus`, and
-  `ClaimProcessingResult` (the `POST /claims` response). `Decision` is defined
-  but returned as `None` until the rule engine lands.
-
-**Later phases:** extend `decision.py` with the adjudicated fields
-(approved_amount, reasons[], line_items[], confidence, degraded).
+  `BlockingIssue`/`BlockingReason`, `RejectionReason`, `DiagnosisMatch`,
+  `LineItemDecision`, `DecisionResult`, `ProcessingStatus`, and
+  `ClaimProcessingResult` (the `POST /claims` response with decision,
+  approved_amount, reasons[], line_items[], confidence, degraded, explanation,
+  financial_breakdown, trace).
+- `extraction.py` — `ExtractedDocument` (the validated shape of LLM-extracted
+  fields) + `extraction_completeness` (the extraction-quality signal for §10).
 
 Casing reality absorbed by the model layer: `opd_categories` keys are
 **lowercase**, `document_requirements` keys and claim categories are
@@ -361,10 +395,10 @@ Planned `TraceEntry` shape:
 }
 ```
 
-Concurrency note: with a single Phase-1 node, plain assignment to `trace` is
-safe. When nodes run in parallel (later), `trace` becomes
-`Annotated[list[dict], operator.add]` so LangGraph **concatenates** updates
-instead of overwriting (risk R8).
+Concurrency note: `trace` and `blocking_issues` are declared
+`Annotated[list[...], operator.add]` in `ClaimState`, so each node returns only
+its own new entries and LangGraph **concatenates** them rather than overwriting —
+safe even if nodes are parallelized later (risk R8).
 
 ---
 
@@ -412,7 +446,7 @@ Two distinct failure surfaces:
 | R2 | Per-category shape differences | One `OpdCategory`; category-specific fields optional. |
 | R3 | LLM hallucination → bad decision | LLMs never decide; output Pydantic-validated. |
 | R4 | LLM/timeout crashes pipeline (TC011) | Per-node try/except → trace + degrade, never 500. |
-| R5 | Diagnosis text ≠ policy keys | `normalize_dx` node; unmapped → MANUAL_REVIEW. |
+| R5 | Diagnosis text ≠ policy keys | `normalize_diagnosis` (deterministic, word-boundary); unmapped → no key, coverage still decided by category. |
 | R6 | Non-deterministic eval | Inject test `content`; engine is pure. |
 | R7 | Policy missing/corrupt | `PolicyLoadError` + `/health` degraded; no decision without policy. |
 | R8 | Concurrent trace mutation | `Annotated[list, add]` reducer when nodes parallelize. |
@@ -446,33 +480,48 @@ one produces a full trace.
 ## 17. Folder structure
 
 ```
-multi_agent_claims_pipeline/            # repo root (this directory)
+.                                       # repo root
 ├── app/
-│   ├── main.py            # FastAPI factory + lifespan      ◀ P1
-│   ├── config.py          # typed settings                  ◀ P1
-│   ├── logging_config.py  # central logging                 ◀ P1
-│   ├── exceptions.py      # typed error hierarchy            ◀ P1
+│   ├── main.py            # FastAPI factory + lifespan (loads policy + graph once)
+│   ├── config.py          # typed settings (env / .env)
+│   ├── logging_config.py  # central logging
+│   ├── exceptions.py      # typed error hierarchy (PolicyLoadError, …)
 │   ├── api/
-│   │   ├── routes_health.py     # GET /health               ◀ P1
-│   │   └── routes_claims.py     # POST /claims              (P3)
+│   │   ├── routes_health.py     # GET /health
+│   │   ├── routes_claims.py     # POST /claims, POST /claims/upload
+│   │   └── routes_ui.py         # GET /, GET /sample-claims
 │   ├── models/
-│   │   ├── policy.py            # policy models             ◀ P1
-│   │   ├── claim.py             # claim request/response    (P2)
-│   │   └── decision.py          # decision + trace          (P2)
-│   ├── policy/loader.py         # load_policy()             ◀ P1
+│   │   ├── policy.py            # policy models + normalized lookups
+│   │   ├── claim.py             # ClaimRequest / Document
+│   │   ├── decision.py          # decision, trace, blocking, result
+│   │   └── extraction.py        # validated LLM-extracted fields
+│   ├── policy/policy_loader.py  # load_policy()
 │   ├── graph/
-│   │   ├── state.py             # ClaimState                ◀ P1
-│   │   ├── builder.py           # build_graph()             ◀ P1
-│   │   └── nodes/               # one file per node         (P2–P3)
-│   ├── rules/                   # deterministic rule engine (P4)
-│   └── llm/                     # LLM clients + prompts      (P2–P3)
-├── tests/                       # pytest                    ◀ P1
+│   │   ├── state.py             # ClaimState (TypedDict + reducers)
+│   │   ├── builder.py           # build_graph() — wiring + early-stop edge
+│   │   └── nodes/               # intake, classify, verify_documents, extract,
+│   │   │                        #   normalize_diagnosis, adjudicate, explain
+│   ├── rules/
+│   │   ├── engine.py            # adjudicate() — the ordered rule engine
+│   │   ├── financials.py        # bill details + money computation
+│   │   └── normalization.py     # diagnosis → policy vocabulary
+│   ├── verification/document_verifier.py   # the early-stop gate (pure)
+│   ├── llm/                     # client (3 tasks) + prompts
+│   └── static/index.html       # single-page UI
+├── tests/                       # pytest (67 tests)
+├── scripts/
+│   ├── run_eval.py              # → docs/EVAL_REPORT.md (deterministic, offline)
+│   ├── make_sample_docs.py      # generate sample document images
+│   └── run_vision_demo.py       # → docs/VISION_DEMO.md (live Claude vision)
 ├── docs/
-│   ├── architecture.md          # this file                 ◀ P1
-│   └── TECHNICAL_DOCUMENTATION.md  # file/phase reference    ◀ P1
-├── policy_terms.json   test_cases.json   assignment.md      # base files (read-only)
-├── README.md           sample_documents_guide.md            # base files (read-only)
-├── requirements.txt    pyproject.toml    .env.example   .gitignore  ◀ P1
+│   ├── architecture.md            # this file
+│   ├── TECHNICAL_DOCUMENTATION.md # file-by-file reference + component contracts
+│   ├── EVAL_REPORT.md             # all 12 cases, full traces + system_must checks
+│   ├── VISION_DEMO.md             # live vision-path runs
+│   └── DEMO_SCRIPT.md             # demo-video storyboard
+├── samples/                       # generated sample document images
+├── policy_terms.json  test_cases.json  assignment.md  README.md  sample_documents_guide.md
+├── requirements.txt   pyproject.toml   .env.example   .gitignore
 ```
 
 ---
@@ -516,12 +565,16 @@ how to extend it:
 
 | Phase | Scope | Status |
 |---|---|---|
-| **P1** | Repo structure, FastAPI, LangGraph scaffold, config, policy loader, `/health` | ✅ done, verified (8 tests pass, server boots) |
-| **P2** | `claim`/`decision` models + `intake` & `verify` nodes + conditional early-stop branch + `POST /claims` (TC001–TC003) | ✅ done, verified (23 tests pass; TC001–TC003 block, TC004 passes) |
-| **P3** | LLM client + `classify`/`extract`/`normalize_dx`/`explain` nodes | ✅ done, verified (LLM behind an interface; deterministic-first; fake-tested) |
-| **P4** | Deterministic rule engine (`adjudicate`) — ordered rules + financials + confidence | ✅ done, verified (49 tests; engine pure & unit-tested) |
+| **P1** | Repo structure, FastAPI, LangGraph scaffold, config, policy loader, `/health` | ✅ done |
+| **P2** | `claim`/`decision` models + `intake` & `verify_documents` nodes + conditional early-stop branch + `POST /claims` (TC001–TC003) | ✅ done; TC001–TC003 block |
+| **P3** | LLM client (`classify`/`extract`/`generate_explanation`) + `classify`/`extract`/`normalize_diagnosis`/`explain` nodes + vision `POST /claims/upload` | ✅ done; LLM behind an interface, deterministic-first, fake-tested |
+| **P4** | Deterministic rule engine (`adjudicate`) — ordered rules + financials (incl. annual OPD limit, min amount, submission window) + composed confidence | ✅ done; engine pure & unit-tested |
 | **P5** | UI for submission and review | ✅ done (`/` SPA + `/sample-claims`) |
-| **P6** | Eval report over all 12 test cases | ✅ done — **12/12 match** (`docs/EVAL_REPORT.md`) |
+| **P6** | Eval report over all 12 test cases | ✅ done — **12/12 match** every `system_must` (`docs/EVAL_REPORT.md`) |
+| **P7** | Live vision demo over generated sample documents | ✅ done (`docs/VISION_DEMO.md`) |
+
+**67 tests pass; ruff clean. Deployed at**
+`https://plum-assignment-a651.onrender.com/`.
 
 ---
 
@@ -535,6 +588,11 @@ how to extend it:
 - **A3 (degrade on policy load failure):** the app starts and reports degraded
   rather than crashing; revisit if "fail-fast on missing core config" is
   preferred for production.
-- **Open:** persistence layer for claims/traces; auth model for the UI; exact
-  confidence formula coefficients (tuned in P4 against expected bounds).
+- **Deliberate trade-offs (not built):** the system is **in-memory and
+  synchronous** — no database, no `GET /claims/{id}`, no async queue. §18 sketches
+  how these become a persistence layer + async processing at 10×. There is no auth
+  on the API (PII boundary noted in §19). These were cut consciously for the
+  2–3-day scope, not overlooked.
+- **Resolved:** the confidence formula (§10) is implemented and unit-tested
+  against the expected bounds; diagnosis normalization is deterministic.
 ```

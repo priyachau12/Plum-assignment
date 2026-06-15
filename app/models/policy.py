@@ -16,7 +16,7 @@ file*. Modeling the file with Pydantic means:
 
 Interactions
 ------------
-- `policy/loader.py` builds a `Policy` via `Policy.model_validate(...)`.
+- `policy/policy_loader.py` builds a `Policy` via `Policy.model_validate(...)`.
 - `main.py` stores the resulting `Policy` on `app.state.policy`.
 - The rule engine (later phase) reads coverage/waiting/exclusion/etc. off it.
 

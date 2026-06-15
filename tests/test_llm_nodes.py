@@ -110,6 +110,31 @@ def test_explain_falls_back_to_built_text_on_failure(approved_result):
     assert "1350" in out["explanation"]  # deterministic built text still works
 
 
+def test_explain_surfaces_degraded_caveat_on_an_approval():
+    # A degraded APPROVAL (TC011) must not read as a clean success — the member
+    # explanation has to carry the "manual review recommended" caveat.
+    degraded_approval = DecisionResult(
+        decision=Decision.APPROVED,
+        approved_amount=4000,
+        confidence=0.65,
+        notes=[
+            "A processing component failed and was skipped; manual review is "
+            "recommended due to incomplete processing."
+        ],
+        financial_breakdown={
+            "is_network": False,
+            "covered_base": 4000,
+            "network_discount_percent": 0,
+            "after_network_discount": 4000,
+            "copay_percent": 0,
+            "after_copay": 4000,
+        },
+    )
+    out = explain({"adjudication_result": degraded_approval}, llm=None)  # template path
+    assert "manual review" in out["explanation"].lower()
+    assert "4000" in out["explanation"]
+
+
 # --- vision classification path (real uploads) -------------------------------
 
 
@@ -155,3 +180,44 @@ def test_classify_skips_when_no_ai_and_no_declared_type():
     out = classify({"request": req}, llm=None)
     assert req.documents[0].actual_type is None
     assert any(t.status == TraceStatus.SKIPPED for t in out["trace"])
+
+
+# --- Phase 4: extraction quality + schema validation -------------------------
+
+
+def test_extract_full_fields_give_full_confidence():
+    full = {"patient_name": "Rajesh Kumar", "date": "2024-11-01", "diagnosis": "Viral Fever"}
+    out = extract({"request": _request_without_content()}, llm=FakeLLM(fields=full))
+    assert out["extraction_confidence"] == 1.0
+
+
+def test_extract_partial_fields_lower_confidence():
+    out = extract({"request": _request_without_content()}, llm=FakeLLM(fields={"diagnosis": "X"}))
+    assert out["extraction_confidence"] < 1.0
+
+
+def test_extract_document_validates_and_coerces_llm_json(monkeypatch):
+    from app.llm.client import AnthropicLLMClient
+
+    client = AnthropicLLMClient(model="x", api_key="dummy", timeout=1.0)
+    monkeypatch.setattr(
+        client,
+        "_ask",
+        lambda doc, prompt, max_tokens=1024: '{"patient_name": "Rajesh", "total": "1500"}',
+    )
+    fields = client.extract_document(Document(file_id="F1", actual_type="HOSPITAL_BILL"))
+    assert fields["patient_name"] == "Rajesh"
+    assert fields["total"] == 1500.0  # coerced from string to float
+
+
+def test_extract_document_raises_on_bad_schema(monkeypatch):
+    from app.llm.client import AnthropicLLMClient
+
+    client = AnthropicLLMClient(model="x", api_key="dummy", timeout=1.0)
+    monkeypatch.setattr(
+        client,
+        "_ask",
+        lambda doc, prompt, max_tokens=1024: '{"total": "not-a-number"}',
+    )
+    with pytest.raises(LLMError):
+        client.extract_document(Document(file_id="F1", actual_type="HOSPITAL_BILL"))

@@ -43,15 +43,17 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.config import Settings
 from app.exceptions import ClaimsSystemError
 from app.llm.prompts import CLASSIFICATION_PROMPT, EXPLANATION_PROMPT, EXTRACTION_PROMPT
 from app.models.claim import Document
+from app.models.extraction import ExtractedDocument
 
 logger = logging.getLogger(__name__)
 
@@ -95,15 +97,32 @@ class AnthropicLLMClient(LLMClient):
     """Calls Anthropic's Messages API with vision. Used on the real-document
     path (not in tests). Validates that structured tasks return JSON."""
 
-    def __init__(self, model: str, api_key: str, timeout: float) -> None:
+    def __init__(self, model: str, api_key: str, timeout: float, max_attempts: int = 2) -> None:
         try:
             import anthropic  # imported lazily so the package is optional
         except ImportError as exc:  # pragma: no cover - only without the dep
             raise LLMError("anthropic package is not installed") from exc
         self._client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
         self._model = model
+        self._max_attempts = max(1, max_attempts)
 
     # --- low-level helpers ---------------------------------------------------
+
+    def _create(self, **kwargs: Any) -> Any:
+        """Call the Messages API with a small retry on transient failures.
+        Synchronous backoff (the pipeline is synchronous by design)."""
+        last_exc: Exception | None = None
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                return self._client.messages.create(model=self._model, **kwargs)
+            except Exception as exc:  # noqa: BLE001 - retry then normalize
+                last_exc = exc
+                logger.warning("LLM attempt %d/%d failed: %s", attempt, self._max_attempts, exc)
+                if attempt < self._max_attempts:
+                    time.sleep(0.5 * attempt)  # pragma: no cover - timing path
+        raise LLMError(
+            f"LLM request failed after {self._max_attempts} attempt(s): {last_exc}"
+        ) from last_exc
 
     def _document_block(self, document: Document) -> dict[str, Any] | None:
         """Build an image/PDF content block from the document's bytes, or None
@@ -142,15 +161,14 @@ class AnthropicLLMClient(LLMClient):
         if block is not None:
             content.append(block)
         content.append({"type": "text", "text": prompt})
+        message = self._create(
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": content}],
+        )
         try:
-            message = self._client.messages.create(
-                model=self._model,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": content}],
-            )
             return message.content[0].text
-        except Exception as exc:  # noqa: BLE001 - normalize every provider error
-            raise LLMError(f"LLM request failed: {exc}") from exc
+        except (AttributeError, IndexError) as exc:  # unexpected response shape
+            raise LLMError(f"LLM returned an unexpected response shape: {exc}") from exc
 
     @staticmethod
     def _parse_json_object(raw: str, what: str) -> dict[str, Any]:
@@ -195,30 +213,37 @@ class AnthropicLLMClient(LLMClient):
                 file_name=document.file_name or document.file_id,
             ),
         )
-        return self._parse_json_object(raw, "extraction")
+        data = self._parse_json_object(raw, "extraction")
+        # Validate the model's JSON into a typed shape before the rules see it.
+        # A hallucinated/mis-typed field (e.g. a non-numeric total) fails here and
+        # degrades the claim instead of corrupting the decision.
+        try:
+            validated = ExtractedDocument.model_validate(data)
+        except ValidationError as exc:
+            raise LLMError(f"LLM extraction did not match the expected schema: {exc}") from exc
+        return validated.model_dump()
 
     def generate_explanation(
         self, decision: str, approved_amount: float, reasons: list[str], fallback: str
     ) -> str:
+        message = self._create(
+            max_tokens=1024,
+            messages=[
+                {
+                    "role": "user",
+                    "content": EXPLANATION_PROMPT.format(
+                        decision=decision,
+                        approved_amount=approved_amount,
+                        reasons=", ".join(reasons) or "none",
+                        fallback=fallback,
+                    ),
+                }
+            ],
+        )
         try:
-            message = self._client.messages.create(
-                model=self._model,
-                max_tokens=1024,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": EXPLANATION_PROMPT.format(
-                            decision=decision,
-                            approved_amount=approved_amount,
-                            reasons=", ".join(reasons) or "none",
-                            fallback=fallback,
-                        ),
-                    }
-                ],
-            )
             return message.content[0].text.strip()
-        except Exception as exc:  # noqa: BLE001 - normalize every provider error
-            raise LLMError(f"LLM request failed: {exc}") from exc
+        except (AttributeError, IndexError) as exc:
+            raise LLMError(f"LLM returned an unexpected response shape: {exc}") from exc
 
 
 def build_llm_client(settings: Settings) -> LLMClient | None:
@@ -231,6 +256,7 @@ def build_llm_client(settings: Settings) -> LLMClient | None:
             model=settings.llm_model,
             api_key=settings.anthropic_api_key,
             timeout=settings.llm_timeout_seconds,
+            max_attempts=settings.llm_max_attempts,
         )
     except LLMError as exc:
         logger.warning("Could not build LLM client (%s); using deterministic fallbacks.", exc)

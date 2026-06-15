@@ -506,7 +506,9 @@ function render(body){
   const showAmount = (key === "APPROVED" || key === "PARTIAL");
 
   let sub;
-  if (showAmount) sub = `${inr(body.approved_amount)} approved for reimbursement`;
+  if (showAmount) sub = body.degraded
+    ? `${inr(body.approved_amount)} approved on available data — pending manual review`
+    : `${inr(body.approved_amount)} approved for reimbursement`;
   else if (key === "REJECTED") sub = reasons.length ? reasons.join(" · ") : "This claim could not be approved.";
   else if (key === "MANUAL_REVIEW") sub = "A claims specialist will review this and follow up.";
   else sub = "Resolve the items below, then resubmit your claim.";
@@ -535,6 +537,11 @@ function render(body){
       <div class="top"><b>Decision confidence</b><span>${pct}%</span></div>
       <div class="track"><div class="fill ${c}" style="width:${pct}%"></div></div>
     </div>`;
+  }
+
+  /* degraded / manual-review caveat — surfaced prominently, not just as a pill */
+  if (body.degraded && body.note){
+    h += `<div class="section"><div class="alert">${ICON.alertSm}<div><b>Manual review recommended</b><p>${esc(body.note)}</p></div></div></div>`;
   }
 
   /* explanation */

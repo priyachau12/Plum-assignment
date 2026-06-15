@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 def _build_explanation_text(result: DecisionResult) -> str:
     d = result.decision
+    note = " ".join(result.notes).strip()  # e.g. degraded / capped caveats
     if d is Decision.APPROVED:
         b = result.financial_breakdown
         parts = [f"Your claim was APPROVED for {result.approved_amount:.0f}."]
@@ -31,23 +32,25 @@ def _build_explanation_text(result: DecisionResult) -> str:
             )
         if b.get("copay_percent"):
             parts.append(f"then a {b['copay_percent']:.0f}% co-pay (-> {b['after_copay']:.0f}).")
+        if note:  # surface degraded/manual-review caveats on approvals too
+            parts.append(note)
         return " ".join(parts)
     if d is Decision.PARTIAL:
         covered = [li for li in result.line_items if li.covered]
         rejected = [li for li in result.line_items if not li.covered]
         approved_list = ", ".join(f"{li.description} ({li.amount:.0f})" for li in covered)
         rejected_list = ", ".join(f"{li.description} ({li.amount:.0f})" for li in rejected)
-        return (
+        base = (
             f"Your claim was PARTIALLY approved for {result.approved_amount:.0f}. "
             f"Approved: {approved_list}. "
             f"Not approved: {rejected_list} — excluded under the policy."
         )
+        return f"{base} {note}".strip()
     if d is Decision.REJECTED:
         reasons = ", ".join(r.value for r in result.rejection_reasons)
-        note = " ".join(result.notes)
         return f"Your claim was REJECTED ({reasons}). {note}".strip()
     # MANUAL_REVIEW
-    return ("Your claim has been routed to MANUAL REVIEW. " + " ".join(result.notes)).strip()
+    return ("Your claim has been routed to MANUAL REVIEW. " + note).strip()
 
 
 def explain(state: ClaimState, *, llm: LLMClient | None) -> dict:

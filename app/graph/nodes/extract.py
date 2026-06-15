@@ -23,6 +23,7 @@ from typing import Any
 from app.graph.state import ClaimState
 from app.llm.client import LLMClient, LLMError
 from app.models.decision import TraceEntry, TraceStatus
+from app.models.extraction import extraction_completeness
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ def extract(state: ClaimState, *, llm: LLMClient | None) -> dict:
     entries: list[TraceEntry] = []
     extracted_content: dict[str, dict[str, Any]] = {}
     degraded = False
+    confidences: list[float] = []  # per-document extraction-quality on the AI path
 
     for doc in request.documents:
         if doc.content:
@@ -62,13 +64,21 @@ def extract(state: ClaimState, *, llm: LLMClient | None) -> dict:
             )
         elif llm is not None:  # real-document path
             try:
-                extracted_content[doc.file_id] = llm.extract_document(doc)
+                fields = llm.extract_document(doc)
+                extracted_content[doc.file_id] = fields
+                completeness = extraction_completeness(fields)
+                confidences.append(completeness)
                 entries.append(
                     TraceEntry(
                         step="extract",
                         status=TraceStatus.OK,
-                        detail=f"{doc.file_id}: fields extracted by the AI.",
-                        data={"file_id": doc.file_id, "source": "llm"},
+                        detail=f"{doc.file_id}: fields extracted by the AI "
+                        f"(completeness {completeness:.2f}).",
+                        data={
+                            "file_id": doc.file_id,
+                            "source": "llm",
+                            "completeness": completeness,
+                        },
                     )
                 )
             except LLMError as exc:
@@ -95,6 +105,11 @@ def extract(state: ClaimState, *, llm: LLMClient | None) -> dict:
     update: dict = {"trace": entries}
     if extracted_content:
         update["extracted_content"] = extracted_content
+    if confidences:
+        # Average field-extraction quality across AI-read documents; feeds the
+        # composed confidence score. (Unset on the inject-content path, where the
+        # caller-provided content is trusted, so confidence stays at its base.)
+        update["extraction_confidence"] = round(sum(confidences) / len(confidences), 2)
     if degraded:
         update["degraded"] = True
     return update

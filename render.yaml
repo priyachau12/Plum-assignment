@@ -1,0 +1,20 @@
+# Render blueprint — reproduces the deployed app at
+# https://plum-assignment-a651.onrender.com/
+#
+# The app runs fully offline/deterministic without a key (LLM nodes fall back).
+# Set ANTHROPIC_API_KEY in the Render dashboard to enable the live vision path
+# for POST /claims/upload.
+services:
+  - type: web
+    name: plum-claims
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: USE_LLM
+        value: "true"
+      - key: ANTHROPIC_API_KEY
+        sync: false # set in the dashboard; never committed

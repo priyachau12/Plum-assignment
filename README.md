@@ -5,8 +5,12 @@ documents, **catches document problems before any processing**, extracts the
 data, **decides deterministically against the member's policy**, and returns the
 decision with a **full step-by-step trace**.
 
-> **Eval result: 12/12 test cases match the expected outcome** (run offline and
-> deterministic). See [`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md).
+> **Live demo:** **https://plum-assignment-a651.onrender.com/**
+> **Eval result: 12/12 test cases match** every expected outcome and `system_must`
+> requirement (run offline and deterministic). See
+> [`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md). The real Claude vision path is
+> demonstrated on actual document images in
+> [`docs/VISION_DEMO.md`](docs/VISION_DEMO.md).
 
 This is my submission for the Plum AI Engineer assignment. The full problem
 statement is in [`assignment.md`](assignment.md). Maintained by Priya Chau.
@@ -177,7 +181,21 @@ Regenerate the eval over all 12 test cases (runs offline, deterministic):
 ```
 
 This writes [`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md) — currently **12/12
-matching** the expected outcomes, with each case's full decision output.
+matching** every expected outcome and `system_must` requirement, with each
+case's per-requirement checks and full decision output.
+
+## Live vision demo (real Claude vision)
+
+To exercise the real vision path on actual document images (needs
+`ANTHROPIC_API_KEY`, makes live calls):
+
+```bash
+.venv/bin/python scripts/make_sample_docs.py   # generate sample images → samples/
+.venv/bin/python scripts/run_vision_demo.py     # upload them → docs/VISION_DEMO.md
+```
+
+This classifies and extracts real images with Claude, then adjudicates
+deterministically — see [`docs/VISION_DEMO.md`](docs/VISION_DEMO.md).
 
 ---
 
@@ -196,12 +214,18 @@ matching** the expected outcomes, with each case's full decision output.
 │   ├── policy/            # policy_terms.json loader
 │   ├── verification/      # early document checks
 │   └── static/            # single-page UI
-├── tests/                 # pytest suite
-├── scripts/run_eval.py    # generates docs/EVAL_REPORT.md
+├── tests/                 # pytest suite (67 tests)
+├── scripts/
+│   ├── run_eval.py        # generates docs/EVAL_REPORT.md (offline, deterministic)
+│   ├── make_sample_docs.py    # generates sample document images → samples/
+│   └── run_vision_demo.py     # live vision run → docs/VISION_DEMO.md
+├── samples/               # generated sample document images (for the vision demo)
 ├── docs/
 │   ├── architecture.md            # design: components, decisions, trade-offs, scaling
 │   ├── TECHNICAL_DOCUMENTATION.md # file-by-file reference + component contracts
-│   └── EVAL_REPORT.md             # all 12 test cases with full traces
+│   ├── EVAL_REPORT.md             # all 12 test cases with full traces
+│   ├── VISION_DEMO.md             # live Claude vision path on real images
+│   └── DEMO_SCRIPT.md             # demo-video storyboard
 ├── policy_terms.json      # policy config, coverage rules, member roster (read at runtime)
 ├── test_cases.json        # 12 test scenarios with expected outcomes
 ├── assignment.md          # the assignment brief
@@ -220,7 +244,10 @@ matching** the expected outcomes, with each case's full decision output.
 - **[`docs/TECHNICAL_DOCUMENTATION.md`](docs/TECHNICAL_DOCUMENTATION.md)** — the
   *what's in each file*: file-by-file reference and component contracts (inputs,
   outputs, and errors for every significant component).
-- **[`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md)** — the eval results.
+- **[`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md)** — the eval results (all 12
+  cases, per-requirement checks, full traces).
+- **[`docs/VISION_DEMO.md`](docs/VISION_DEMO.md)** — the real Claude vision path
+  run end-to-end on actual document images.
 
 ---
 

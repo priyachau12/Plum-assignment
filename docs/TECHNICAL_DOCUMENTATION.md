@@ -170,17 +170,16 @@ the `intake` placeholder, the rule engine, LLM clients, the UI.
 
 **Scope delivered:** `ClaimRequest`/`Document`/`decision` models; the pure
 `document_verifier` (required-docs, readability, patient-consistency checks);
-the `intake` and `verify` graph nodes; the **conditional early-stop branch**
-(`verify → blocked: END | passed: pending_adjudication`); and the `POST /claims`
+the `intake` and `verify_documents` graph nodes; the **conditional early-stop
+branch** (`verify_documents → {stop: END | continue: …}`); and the `POST /claims`
 endpoint. Handles **TC001–TC003** (block with specific messages) and lets clean
 claims (TC004) pass verification. **No LLM, no adjudication yet.**
 
 **Verification (run 2026-06-14):**
 - `pytest` → **23 passed**.
 - Live `POST /claims`: TC001 → `BLOCKED`, message *"You uploaded: PRESCRIPTION,
-  PRESCRIPTION. A CONSULTATION claim requires … HOSPITAL_BILL …"*, trace stops
-  before `pending_adjudication`. TC004 → `VERIFICATION_PASSED`, trace includes
-  `pending_adjudication`.
+  PRESCRIPTION. A CONSULTATION claim requires … HOSPITAL_BILL …"*, trace stops at
+  the gate. TC004 → passes verification and continues down the pipeline.
 
 **Decisions this phase:** D11 (pure verifier vs node adapter), D12 (200 + structured
 blocking body, not 4xx), D13 (bind policy into nodes via `functools.partial`),
@@ -210,12 +209,33 @@ the rule engine, the UI.
   the decision + trace.
 - **P6 (eval):** `scripts/run_eval.py` → `docs/EVAL_REPORT.md`.
 
-**Verification (run 2026-06-14):**
-- `pytest` → **49 passed** (offline; `USE_LLM=false`).
-- `scripts/run_eval.py` → **12/12 cases match expected**.
+**Verification:**
+- `pytest` → **67 passed** (offline; `USE_LLM=false`); `ruff check .` clean.
+- `scripts/run_eval.py` → **12/12 cases match** every `system_must` requirement
+  (message specificity, eligibility dates, confidence bounds, fraud signals,
+  discount-before-co-pay), not just decision + amount.
 - Live server: UI serves (HTTP 200), `/sample-claims` returns 12 cases, TC010
   decision shows discount-before-co-pay (₹4500 → ₹3600 → ₹3240); a live LLM call
   produced the member explanation (numbers unchanged — engine computed them).
+
+### Phase 7 — Hardening, policy completeness, and the live vision demo (status: ✅ complete)
+
+**Scope delivered:**
+- **Policy completeness:** annual OPD limit (via `ytd_claims_amount`), minimum
+  claim amount, and submission deadline (guarded by an optional `submission_date`)
+  — all read from `policy_terms.json` (new reasons `ANNUAL_LIMIT_EXCEEDED`,
+  `BELOW_MINIMUM`, `SUBMISSION_WINDOW_EXCEEDED`).
+- **Composed confidence:** base − degraded − extraction-quality − ambiguity, with
+  a < 0.50 gate that routes to MANUAL_REVIEW.
+- **AI hardening:** `ExtractedDocument` Pydantic validation of LLM output;
+  retries/backoff on the Anthropic client.
+- **Live vision demo:** generated sample document images run through
+  `POST /claims/upload` against real Claude vision → `docs/VISION_DEMO.md`.
+
+**Decisions this phase:** D23 (annual-OPD cap in the financial `min`; reject when
+exhausted), D24 (composed confidence + low-confidence → MANUAL_REVIEW routing),
+D25 (Pydantic-validate LLM extraction; retry transient calls), D26 (keep diagnosis
+normalization deterministic — the interface stays at exactly three LLM tasks).
 
 **Decisions this phase:** D16 (LLM behind an injectable interface; fake in tests),
 D17 (deterministic-first / LLM-fallback in every LLM node), D18 (deterministic
@@ -266,6 +286,8 @@ each maps 1:1 to a `Settings` field. Copy `.env.example` → `.env` to override.
 | `LLM_PROVIDER` | `llm_provider` | `anthropic` | Phase 2 |
 | `LLM_MODEL` | `llm_model` | `claude-sonnet-4-6` | Phase 2 |
 | `LLM_TIMEOUT_SECONDS` | `llm_timeout_seconds` | `30.0` | Phase 2 |
+| `LLM_MAX_ATTEMPTS` | `llm_max_attempts` | `2` | Phase 4 (retries) |
+| `USE_LLM` | `use_llm` | `True` | master switch; `false` ⇒ deterministic/offline |
 | `ANTHROPIC_API_KEY` | `anthropic_api_key` | `None` | Phase 2 |
 
 `get_settings()` is `lru_cache`d → the env is read and validated exactly once
@@ -282,7 +304,7 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
 - **`app/config.py`** — Typed settings (`Settings`, `get_settings()`,
   `PROJECT_ROOT`). · Single source of truth for tunables; validated at startup.
   · Read by `main.py` (startup), `routes_health.py` (via `app.state`),
-  `loader.py` (gets the policy path).
+  `policy_loader.py` (gets the policy path).
 - **`app/logging_config.py`** — `configure_logging(level)`. · One consistent log
   format/level across all modules; idempotent (no duplicate handlers). · Called
   once by `main.py` at startup; every module uses `logging.getLogger(__name__)`.
@@ -301,7 +323,7 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
   `ProcessingStatus`, `ClaimProcessingResult`. · Types the trace + early-stop +
   response. · Produced by nodes, the verifier, and `routes_claims.py`.
 - **`app/verification/document_verifier.py`** *(P2)* — pure checks
-  (`verify_documents` → `VerificationResult`): required docs, readability,
+  (`verify_documents` → `DocumentVerificationResult`): required docs, readability,
   patient consistency. · The early-stop logic, LangGraph-free and unit-tested. ·
   Called by the `verify_documents` node.
 - **`app/graph/nodes/intake.py`** *(P2)* — `intake_node`: opens the trace,
@@ -311,8 +333,12 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
 - **`app/api/routes_claims.py`** *(P2/P4)* — `POST /claims`: validates body,
   invokes the graph, maps final state → `ClaimProcessingResult` (BLOCKED or
   DECIDED); 503 if policy/graph absent.
-- **`app/rules/financials.py`** *(P4)* — line-item collection + network detection
-  + the `content_for` (inline-or-extracted) helper. · Used by the engine.
+- **`app/rules/financials.py`** *(P4)* — bill-item collection + network detection
+  + the `get_document_fields` (inline-or-extracted) helper, `effective_per_claim_cap`,
+  and `compute_financials` (discount → co-pay → caps). · Used by the engine.
+- **`app/models/extraction.py`** *(P4)* — `ExtractedDocument` (validated shape of
+  LLM-extracted fields) + `extraction_completeness` (the confidence signal). ·
+  Used by `llm/client.py` and the `extract` node.
 - **`app/rules/normalization.py`** *(P4)* — deterministic diagnosis→policy-vocab
   mapping (word-boundary alias matching). · Used by the normalize node.
 - **`app/rules/engine.py`** *(P4)* — `adjudicate()`: the ordered rules + money
@@ -326,7 +352,12 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
 - **`app/api/routes_ui.py`** *(P5)* — `GET /` (serves the SPA) + `GET
   /sample-claims` (the 12 cases for the UI).
 - **`app/static/index.html`** *(P5)* — the submission + review UI (vanilla JS).
-- **`scripts/run_eval.py`** *(P6)* — runs all 12 cases, writes `EVAL_REPORT.md`.
+- **`scripts/run_eval.py`** *(P6)* — runs all 12 cases offline, asserts each
+  case's `system_must` requirements, writes `EVAL_REPORT.md`.
+- **`scripts/make_sample_docs.py`** *(P7)* — generates sample document images
+  (Pillow) into `samples/` for the vision demo.
+- **`scripts/run_vision_demo.py`** *(P7)* — uploads those images to
+  `POST /claims/upload` with the live LLM, writes `docs/VISION_DEMO.md`.
 - **`app/models/policy.py`** — Pydantic models for `policy_terms.json`
   (`Policy`, `Coverage`, `OpdCategory`, `WaitingPeriods`, `Exclusions`,
   `PreAuthorization`, `DocumentRequirement`, `FraudThresholds`, `Member`, …)
@@ -336,18 +367,19 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
 
 ### Policy loading
 
-- **`app/policy/loader.py`** — `load_policy(path) -> Policy`. · Isolates I/O +
-  parse + validation; maps 3 failure modes to one `PolicyLoadError`. · Called by
-  `main.py`; returns a `Policy`; raises `PolicyLoadError`.
+- **`app/policy/policy_loader.py`** — `load_policy(path) -> Policy`. · Isolates
+  I/O + parse + validation; maps 3 failure modes to one `PolicyLoadError`. ·
+  Called by `main.py`; returns a `Policy`; raises `PolicyLoadError`.
 
 ### Orchestration (LangGraph)
 
 - **`app/graph/state.py`** — `ClaimState` (TypedDict, `total=False`). · The
   shared state every node reads/updates; `trace` is the observability backbone.
   · Used as the graph's schema in `builder.py`.
-- **`app/graph/builder.py`** — `build_graph()` + placeholder `_intake_node`. ·
-  One place that constructs/compiles the graph. · Called by `main.py`; returns a
-  compiled Runnable stored on `app.state.graph`.
+- **`app/graph/builder.py`** — `build_graph(policy, llm)`: registers the 7 nodes,
+  binds `policy`/`llm` via `partial`, wires the edges + the early-stop conditional
+  edge. · One place that constructs/compiles the graph. · Called by `main.py`;
+  returns a compiled Runnable stored on `app.state.graph`.
 
 ### API
 
@@ -382,9 +414,9 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
 
 ---
 
-## 5. Component contracts (Phase 1)
+## 5. Component contracts
 
-> Precise enough to reimplement without reading the code.
+> Precise enough to reimplement any single component without reading its code.
 
 ### `load_policy(path: Path) -> Policy`
 - **Input:** filesystem path to a policy JSON file.
@@ -400,17 +432,53 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
 - `document_requirement(category: str) -> DocumentRequirement | None` —
   case-insensitive (uppercases; file keys are uppercase).
 
-### `build_graph(policy: Policy) -> CompiledGraph`
-- **Input:** the loaded `Policy` (bound into the stateful nodes).
+### `build_graph(policy: Policy, llm: LLMClient | None = None) -> CompiledGraph`
+- **Input:** the loaded `Policy` (bound into the deterministic nodes) and the
+  optional `LLMClient` (bound into the AI nodes), both via `functools.partial`.
 - **Output:** a compiled LangGraph with `.invoke(state) -> dict`.
-- **Behavior:** `intake → verify → {blocked: END | passed: pending_adjudication → END}`.
+- **Behavior:** `intake → classify → verify_documents → {stop: END | continue:
+  extract → normalize_diagnosis → adjudicate → explain → END}`. The conditional
+  edge `_after_document_verification` routes a claim with `blocking_issues` to END.
 
-### `verify_documents(request: ClaimRequest, policy: Policy) -> VerificationResult`
+### `verify_documents(request: ClaimRequest, policy: Policy) -> DocumentVerificationResult`
 - **Input:** a validated claim + the policy.
-- **Output:** `VerificationResult{ passed: bool, blocking_issues: [BlockingIssue],
-  trace_entries: [TraceEntry] }`. Every check emits a trace entry (pass or fail);
-  all checks run so multiple problems are reported together.
+- **Output:** `DocumentVerificationResult{ passed: bool, blocking_issues:
+  [BlockingIssue], trace_entries: [TraceEntry] }`. Every check emits a trace
+  entry (pass or fail); all three checks (required docs / readability / patient
+  consistency) run so multiple problems are reported together.
 - **Raises:** nothing — verification is total.
+
+### Graph nodes — each `(state: ClaimState, *, policy|llm) -> dict`
+Every node returns only the state keys it sets; LangGraph merges them (`trace`
+and `blocking_issues` concatenate via `operator.add`). None raise — AI nodes
+catch `LLMError` and degrade.
+- `intake(state, *, policy)` → `{member, trace}` — resolve member; open the trace.
+- `classify(state, *, llm)` → `{classified_docs, trace}` — per document: trust a
+  declared `actual_type`, else vision-classify (type/readability/patient written
+  back onto the `Document`).
+- `verify_documents(state, *, policy)` → `{trace, blocking_issues, status?}` —
+  thin adapter over `document_verifier.verify_documents`; sets `status=BLOCKED`
+  on any blocking issue.
+- `extract(state, *, llm)` → `{extracted_content?, extraction_confidence?,
+  degraded?, trace}` — use inline `content`, else `llm.extract_document`; honors
+  `simulate_component_failure` by degrading (TC011).
+- `normalize_diagnosis(state, *, policy)` → `{normalized_diagnosis, trace}`.
+- `adjudicate(state, *, policy)` → `{adjudication_result, status=DECIDED, trace}`.
+- `explain(state, *, llm)` → `{explanation, trace}`.
+
+### `normalize_diagnosis(request, extracted_content, policy) -> DiagnosisMatch`
+- **Input:** the claim, the extracted-content map, the policy.
+- **Output:** `DiagnosisMatch{ raw_text, waiting_condition | None,
+  excluded_condition | None }` — free text mapped to policy vocabulary via
+  whole-word keyword matching (deterministic). **Raises:** nothing.
+
+### `compute_financials(covered_base, cat, bill, policy, remaining_annual_opd) -> (float, dict)`
+- **Input:** covered base amount, the `OpdCategory` (or None), `BillDetails`,
+  the policy, and the remaining annual OPD allowance.
+- **Output:** `(approved_amount, breakdown)`. Applies network discount FIRST,
+  then co-pay, then caps at `min(after_copay, max(per_claim_limit, sub_limit),
+  remaining_annual_opd)`. The breakdown dict carries every intermediate number.
+- **Raises:** nothing.
 
 ### `POST /claims`
 - **Input (body):** `ClaimRequest` (JSON). Documents may declare `actual_type`
@@ -431,25 +499,35 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
 - **Errors:** **422** if no non-empty file is supplied or a form field is invalid;
   **503** if the policy/graph is unavailable.
 
-### `adjudicate(request, member, normalized, policy, financials, extracted, degraded) -> AdjudicationResult`
-- **Input:** validated claim, resolved member (or None), normalized diagnosis,
-  policy, computed financials, extracted-content map, degraded flag.
-- **Output:** `AdjudicationResult{ decision, approved_amount, rejection_reasons[],
+### `adjudicate(request, member, diagnosis, policy, bill, extracted_content, degraded, extraction_confidence=1.0) -> DecisionResult`
+- **Input:** validated claim, resolved member (or None), `DiagnosisMatch`, policy,
+  `BillDetails`, extracted-content map, degraded flag, and the average extraction
+  confidence (1.0 on the inject-content path).
+- **Output:** `DecisionResult{ decision, approved_amount, rejection_reasons[],
   line_items[], confidence, financial_breakdown, notes[], trace_entries[] }`.
-- **Guarantees:** pure + deterministic; every rule emits a trace entry; discount
-  is applied before co-pay; precedence is reject > manual_review > partial > approve.
+  `rejection_reasons` ∈ {NOT_ELIGIBLE, BELOW_MINIMUM, SUBMISSION_WINDOW_EXCEEDED,
+  WAITING_PERIOD, EXCLUDED_CONDITION, PRE_AUTH_MISSING, PER_CLAIM_EXCEEDED,
+  ANNUAL_LIMIT_EXCEEDED}.
+- **Guarantees:** pure + deterministic; every rule emits a trace entry; exclusion
+  before waiting period; discount before co-pay; an otherwise-approvable claim
+  with confidence < 0.50 is routed to MANUAL_REVIEW.
 - **Raises:** nothing.
 
 ### `LLMClient` (interface) — `build_llm_client(settings) -> LLMClient | None`
-- **Methods:**
-  - `triage_document(doc) -> DocumentTriage{document_type, readable, patient_name}`
-    — vision classification + readability + patient name (feeds the early gate).
-  - `read_document_fields(doc) -> dict` — vision structured extraction.
-  - `write_explanation(decision, approved_amount, reasons, fallback) -> str`.
+- **Methods (the three LLM tasks):**
+  - `classify_document(doc) -> DocumentClassification{document_type, readable,
+    patient_name}` — vision classification + readability + patient name (feeds
+    the early gate).
+  - `extract_document(doc) -> dict` — vision structured extraction, **validated
+    into `ExtractedDocument`** before return (a mis-typed field raises `LLMError`).
+  - `generate_explanation(decision, approved_amount, reasons, fallback) -> str`.
 - **Vision:** when `doc.data_base64`/`doc.media_type` are set, the call attaches an
   image or PDF content block so Claude reads the real document; otherwise it falls
   back to a filename-only prompt.
-- **Raises:** `LLMError` on any provider/parse failure (callers degrade, never crash).
+- **Resilience:** the Anthropic client retries up to `llm_max_attempts` times with
+  backoff on transient failures before raising.
+- **Raises:** `LLMError` on any provider/parse/validation failure (callers degrade,
+  never crash).
 - **Factory:** returns `None` when `use_llm` is false or no API key (offline mode).
 
 ### `GET /sample-claims`
@@ -490,6 +568,10 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
 | D20 | Check exclusion BEFORE waiting period | Obesity rejects as EXCLUDED_CONDITION not WAITING_PERIOD (TC012 expects the former) | Waiting first (wrong reason code) |
 | D21 | Per-claim limit applied to the *covered* amount (post line-item exclusion) | Dental TC006 covered ₹8000 ≤ cap; only excluded line dropped | Apply to claimed total (would reject TC006) |
 | D22 | Submission-window uses optional submission date; absent ⇒ on-time | The 2024 treatment dates aren't falsely rejected against today (2026) | Check vs today (rejects every test case) |
+| D23 | Annual OPD limit caps the payout (`annual_opd_limit − ytd_claims_amount`); reject when exhausted | Applies a real policy rule that was modeled but unused; guarded so the 12 cases are unaffected | Ignoring the annual limit (approves claims the policy wouldn't) |
+| D24 | Composed confidence (base − degraded − extraction-quality − ambiguity) + low-confidence (<0.50) → MANUAL_REVIEW | Confidence reflects real uncertainty and routes accordingly; matches the documented model | Flat `0.95 − 0.30·degraded` (doesn't reflect extraction quality) |
+| D25 | Pydantic-validate LLM extraction; retry transient Anthropic calls | Contains hallucinated/mis-typed fields; survives a flaky call | Trusting raw LLM JSON; single-attempt calls |
+| D26 | Keep diagnosis normalization deterministic (no 4th LLM method) | Reproducible decisions; the LLM interface stays at exactly three tasks | An LLM normalize method (non-deterministic; widens the interface) |
 
 ---
 
@@ -501,7 +583,7 @@ per process. Tests call `get_settings.cache_clear()` to re-read.
 | R2 | Per-category shape differences | One `OpdCategory`, category-specific fields optional. |
 | R3 | LLM hallucination → bad decision | LLMs never decide; output Pydantic-validated. |
 | R4 | LLM/timeout crashes pipeline (TC011) | Per-node try/except → trace + degrade, never 500. |
-| R5 | Diagnosis text ≠ policy keys | `normalize_dx` node; unmapped → MANUAL_REVIEW. |
+| R5 | Diagnosis text ≠ policy keys | `normalize_diagnosis` (deterministic, word-boundary); unmapped → no key, coverage still decided by category. |
 | R6 | Non-deterministic eval | Inject test `content`; engine is pure. |
 | R7 | Policy missing/corrupt | `PolicyLoadError` + `/health` degraded. |
 | R8 | Concurrent trace mutation | Phase 2 uses `Annotated[list, add]` reducer. |

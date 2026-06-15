@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     llm_provider: str = "anthropic"
     llm_model: str = "claude-sonnet-4-6"  # vision-capable; configurable
     llm_timeout_seconds: float = 30.0
+    llm_max_attempts: int = 2  # retries for transient LLM/network failures
     anthropic_api_key: str | None = None
 
 
