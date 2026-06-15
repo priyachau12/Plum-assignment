@@ -140,6 +140,10 @@ class ClaimRequest(BaseModel):
     # Optional inputs used by the rule engine.
     hospital_name: str | None = None
     ytd_claims_amount: float | None = None
+    # When the claim was submitted. Optional: if absent we assume on-time, so the
+    # treatment-date-only test cases are never falsely rejected against today's
+    # date. When supplied, the submission-deadline rule enforces it.
+    submission_date: date | None = None
     claims_history: list[ClaimHistoryEntry] = Field(default_factory=list)
     pre_authorization_obtained: bool = False  # set true if member obtained pre-auth
     simulate_component_failure: bool = False  # TC011: force a node to fail

@@ -15,15 +15,18 @@ outcome, so the reviewer can see everything that was checked.
 
 Rule order (precedence)
 -----------------------
- 1. Eligibility (member exists)                       -> REJECT NOT_ELIGIBLE
- 2. Whole-claim exclusion (diagnosis/treatment)       -> REJECT EXCLUDED_CONDITION   (TC012)
- 3. Waiting period (specific, then initial)           -> REJECT WAITING_PERIOD        (TC005)
- 4. Pre-authorization (high-value tests)              -> REJECT PRE_AUTH_MISSING      (TC007)
- 5. Per-claim limit (on covered amount)               -> REJECT PER_CLAIM_EXCEEDED    (TC008)
- 6. Line-item exclusions (dental/vision)              -> PARTIAL / REJECT             (TC006)
- 7. Fraud signals                                     -> MANUAL_REVIEW                (TC009)
- 8. High-value auto review                            -> MANUAL_REVIEW
- 9. Money math (discount BEFORE co-pay)               -> APPROVED amount        (TC004, TC010)
+ 1.  Eligibility (member exists)                      -> REJECT NOT_ELIGIBLE
+ 1b. Minimum claim amount                             -> REJECT BELOW_MINIMUM
+ 1c. Submission deadline (only if submission_date set)-> REJECT SUBMISSION_WINDOW_EXCEEDED
+ 2.  Whole-claim exclusion (diagnosis/treatment)      -> REJECT EXCLUDED_CONDITION   (TC012)
+ 3.  Waiting period (specific, then initial)          -> REJECT WAITING_PERIOD        (TC005)
+ 4.  Pre-authorization (high-value tests)             -> REJECT PRE_AUTH_MISSING      (TC007)
+ 5.  Per-claim limit (on covered amount)              -> REJECT PER_CLAIM_EXCEEDED    (TC008)
+ 6.  Line-item exclusions (dental/vision)             -> PARTIAL / REJECT             (TC006)
+ 7.  Fraud signals                                    -> MANUAL_REVIEW                (TC009)
+ 8.  High-value auto review                           -> MANUAL_REVIEW
+ 8b. Annual OPD limit exhausted                       -> REJECT ANNUAL_LIMIT_EXCEEDED
+ 9.  Money math (discount BEFORE co-pay, caps last)   -> APPROVED amount        (TC004, TC010)
 
 Interactions
 ------------
@@ -56,9 +59,38 @@ from app.rules.financials import (
 
 _LINE_ITEM_CATEGORIES = {"DENTAL", "VISION"}
 
+# An otherwise-approvable claim whose confidence falls below this is too
+# uncertain to auto-approve, so it is routed to a human reviewer instead.
+_LOW_CONFIDENCE_THRESHOLD = 0.50
 
-def _confidence_score(degraded: bool, base: float = 0.95) -> float:
-    return round(max(0.0, base - (0.30 if degraded else 0.0)), 2)
+
+def _confidence_score(
+    base: float,
+    *,
+    degraded: bool,
+    extraction_confidence: float = 1.0,
+    ambiguous: bool = False,
+) -> float:
+    """Composed confidence, not a flat constant:
+
+      base                          decision determinism (0.95 clear-cut / 0.90 review)
+      - 0.30 if degraded            a component failed and was skipped (TC011)
+      - extraction-quality penalty  (1 - avg field confidence), real vision path only
+      - ambiguity penalty           nothing to reason about (no diagnosis text AND
+                                     no bill line items)
+
+    On the deterministic inject-content path `extraction_confidence` is 1.0 and
+    every case carries either a diagnosis or itemized bill lines, so both
+    penalties are 0 and the score equals the base — keeping the 12-case eval
+    stable.
+    """
+    score = base
+    if degraded:
+        score -= 0.30
+    score -= (1.0 - extraction_confidence) * 0.40
+    if ambiguous:
+        score -= 0.10
+    return round(max(0.0, min(1.0, score)), 2)
 
 
 def _find_fraud_signals(request: ClaimRequest, policy: Policy) -> list[str]:
@@ -118,6 +150,7 @@ def adjudicate(
     bill: BillDetails,
     extracted_content: dict[str, Any],
     degraded: bool,
+    extraction_confidence: float = 1.0,
 ) -> DecisionResult:
     trace: list[TraceEntry] = []
     category = request.claim_category.value
@@ -126,13 +159,25 @@ def adjudicate(
     def record(step: str, status: TraceStatus, detail: str, data: dict | None = None) -> None:
         trace.append(TraceEntry(step=step, status=status, detail=detail, data=data or {}))
 
+    def _conf(base: float) -> float:
+        # Ambiguous only when there is genuinely nothing to reason about: no
+        # diagnosis/treatment text AND no itemized bill lines. (A dental bill with
+        # line items but no diagnosis field is NOT ambiguous — TC006.)
+        ambiguous = not (diagnosis.raw_text.strip() or bool(bill.items))
+        return _confidence_score(
+            base,
+            degraded=degraded,
+            extraction_confidence=extraction_confidence,
+            ambiguous=ambiguous,
+        )
+
     def rejected(reason: RejectionReason, notes: list[str]) -> DecisionResult:
         return DecisionResult(
             decision=Decision.REJECTED,
             approved_amount=0.0,
             rejection_reasons=[reason],
             line_items=line_items,
-            confidence=_confidence_score(degraded),
+            confidence=_conf(0.95),
             notes=notes,
             trace_entries=trace,
         )
@@ -184,6 +229,60 @@ def adjudicate(
         TraceStatus.OK,
         f"Member {member.member_id} ({member.name}) is covered.",
     )
+
+    # ---- Rule 1b: minimum claim amount --------------------------------------
+    minimum = policy.submission_rules.minimum_claim_amount
+    if request.claimed_amount < minimum:
+        record(
+            "adjudicate.minimum_amount",
+            TraceStatus.BLOCKED,
+            f"Claimed amount {request.claimed_amount:.0f} is below the minimum "
+            f"claimable amount of {minimum:.0f}.",
+        )
+        return rejected(
+            RejectionReason.BELOW_MINIMUM,
+            [
+                f"The minimum claimable amount is {minimum:.0f}; this claim is for "
+                f"{request.claimed_amount:.0f}."
+            ],
+        )
+    record(
+        "adjudicate.minimum_amount",
+        TraceStatus.OK,
+        f"Claimed amount {request.claimed_amount:.0f} meets the minimum of {minimum:.0f}.",
+    )
+
+    # ---- Rule 1c: submission deadline (only when a submission date is given) -
+    deadline_days = policy.submission_rules.deadline_days_from_treatment
+    if request.submission_date is not None:
+        last_day = request.treatment_date + timedelta(days=deadline_days)
+        if request.submission_date > last_day:
+            record(
+                "adjudicate.submission_window",
+                TraceStatus.BLOCKED,
+                f"Submitted {request.submission_date.isoformat()}, after the "
+                f"{deadline_days}-day deadline (last day {last_day.isoformat()} for "
+                f"treatment on {request.treatment_date.isoformat()}).",
+            )
+            return rejected(
+                RejectionReason.SUBMISSION_WINDOW_EXCEEDED,
+                [
+                    f"Claims must be submitted within {deadline_days} days of treatment. "
+                    f"Treatment was {request.treatment_date.isoformat()}; the deadline was "
+                    f"{last_day.isoformat()}."
+                ],
+            )
+        record(
+            "adjudicate.submission_window",
+            TraceStatus.OK,
+            f"Submitted within the {deadline_days}-day deadline.",
+        )
+    else:
+        record(
+            "adjudicate.submission_window",
+            TraceStatus.OK,
+            f"No submission date provided; assumed within the {deadline_days}-day deadline.",
+        )
 
     # ---- Rule 2: whole-claim exclusion --------------------------------------
     if diagnosis.excluded_condition:
@@ -302,7 +401,7 @@ def adjudicate(
             decision=Decision.MANUAL_REVIEW,
             approved_amount=0.0,
             line_items=line_items,
-            confidence=_confidence_score(degraded, base=0.90),
+            confidence=_conf(0.90),
             notes=["Routed to manual review due to fraud signals: " + "; ".join(signals)],
             financial_breakdown={"signals": signals},
             trace_entries=trace,
@@ -321,14 +420,42 @@ def adjudicate(
             decision=Decision.MANUAL_REVIEW,
             approved_amount=0.0,
             line_items=line_items,
-            confidence=_confidence_score(degraded, base=0.90),
+            confidence=_conf(0.90),
             notes=["High-value claim routed to manual review."],
             trace_entries=trace,
         )
 
+    # ---- Rule 8b: annual OPD limit ------------------------------------------
+    remaining_annual = policy.coverage.annual_opd_limit - (request.ytd_claims_amount or 0.0)
+    if remaining_annual <= 0:
+        record(
+            "adjudicate.annual_limit",
+            TraceStatus.BLOCKED,
+            f"Annual OPD limit of {policy.coverage.annual_opd_limit:.0f} is exhausted "
+            f"(year-to-date claims {request.ytd_claims_amount or 0:.0f}).",
+        )
+        return rejected(
+            RejectionReason.ANNUAL_LIMIT_EXCEEDED,
+            [
+                f"The annual OPD limit of {policy.coverage.annual_opd_limit:.0f} has been "
+                f"reached for this policy year."
+            ],
+        )
+    record(
+        "adjudicate.annual_limit",
+        TraceStatus.OK,
+        f"{remaining_annual:.0f} of the annual OPD limit "
+        f"({policy.coverage.annual_opd_limit:.0f}) remains.",
+    )
+
     # ---- Rule 9: money math (network discount BEFORE co-pay) ----------------
-    approved, breakdown = compute_financials(covered_base, cat, bill, policy)
+    approved, breakdown = compute_financials(covered_base, cat, bill, policy, remaining_annual)
     notes: list[str] = []
+    if approved < round(breakdown["after_copay"], 2):
+        if approved == round(remaining_annual, 2):
+            notes.append("Payout capped at the remaining annual OPD limit.")
+        else:
+            notes.append("Payout capped at the per-claim limit.")
     if degraded:
         notes.append(
             "A processing component failed and was skipped; manual review is recommended "
@@ -344,11 +471,33 @@ def adjudicate(
         breakdown,
     )
 
+    final_confidence = _conf(0.95)
+
+    # Confidence gate: an otherwise-approvable claim we are too unsure about goes
+    # to a human rather than being auto-approved (the system surfaces its own
+    # uncertainty instead of hiding it).
+    if final_confidence < _LOW_CONFIDENCE_THRESHOLD:
+        record(
+            "adjudicate.confidence_gate",
+            TraceStatus.BLOCKED,
+            f"Confidence {final_confidence} is below {_LOW_CONFIDENCE_THRESHOLD}; "
+            "routing to manual review rather than auto-approving.",
+        )
+        return DecisionResult(
+            decision=Decision.MANUAL_REVIEW,
+            approved_amount=0.0,
+            line_items=line_items,
+            confidence=final_confidence,
+            financial_breakdown=breakdown,
+            notes=notes + ["Low confidence in the extracted data; routed to manual review."],
+            trace_entries=trace,
+        )
+
     return DecisionResult(
         decision=Decision.PARTIAL if any_excluded else Decision.APPROVED,
         approved_amount=approved,
         line_items=line_items,
-        confidence=_confidence_score(degraded),
+        confidence=final_confidence,
         financial_breakdown=breakdown,
         notes=notes,
         trace_entries=trace,

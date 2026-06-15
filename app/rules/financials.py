@@ -109,15 +109,18 @@ def compute_financials(
     cat: OpdCategory | None,
     bill: BillDetails,
     policy: Policy,
+    remaining_annual_opd: float,
 ) -> tuple[float, dict[str, Any]]:
-    """Apply network discount FIRST, then co-pay, then cap at the effective
-    per-claim limit. Returns (approved_amount, breakdown)."""
+    """Apply network discount FIRST, then co-pay, then cap at the lower of the
+    effective per-claim limit and the remaining annual OPD limit. Returns
+    (approved_amount, breakdown). The order is the policy's: discount, then
+    co-pay on the discounted amount (TC010), then caps last."""
     discount_pct = cat.network_discount_percent if cat and bill.is_network_hospital else 0.0
     copay_pct = cat.copay_percent if cat else 0.0
     after_discount = covered_base * (1 - discount_pct / 100)
     after_copay = after_discount * (1 - copay_pct / 100)
     cap = effective_per_claim_cap(cat, policy)
-    approved = round(min(after_copay, cap), 2)
+    approved = round(min(after_copay, cap, max(remaining_annual_opd, 0.0)), 2)
 
     breakdown: dict[str, Any] = {
         "covered_base": round(covered_base, 2),
@@ -126,6 +129,8 @@ def compute_financials(
         "after_network_discount": round(after_discount, 2),
         "copay_percent": copay_pct,
         "after_copay": round(after_copay, 2),
+        "per_claim_cap": cap,
+        "remaining_annual_opd": round(remaining_annual_opd, 2),
         "approved_amount": approved,
     }
     return approved, breakdown

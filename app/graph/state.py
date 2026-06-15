@@ -42,6 +42,7 @@ class ClaimState(TypedDict, total=False):
     # Working fields filled in as the claim moves down the line.
     classified_docs: dict[str, str]
     extracted_content: dict[str, Any]
+    extraction_confidence: float  # avg field-extraction confidence (1.0 on the inject path)
     normalized_diagnosis: DiagnosisMatch
     degraded: bool
     adjudication_result: DecisionResult

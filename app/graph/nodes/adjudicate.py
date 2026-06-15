@@ -28,10 +28,11 @@ def adjudicate(state: ClaimState, *, policy: Policy) -> dict:
     diagnosis = state.get("normalized_diagnosis") or DiagnosisMatch()
     extracted_content = state.get("extracted_content", {})
     degraded = state.get("degraded", False)
+    extraction_confidence = state.get("extraction_confidence", 1.0)
 
     bill = gather_bill_details(request, policy, extracted_content)
     result = run_adjudication(
-        request, member, diagnosis, policy, bill, extracted_content, degraded
+        request, member, diagnosis, policy, bill, extracted_content, degraded, extraction_confidence
     )
 
     logger.info(
