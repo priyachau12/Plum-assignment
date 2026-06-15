@@ -3,119 +3,400 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Plum Claims — Submit & Review</title>
+  <title>Plum Health — Claims</title>
   <style>
-    :root { --bg:#0f172a; --panel:#1e293b; --line:#334155; --text:#e2e8f0; --muted:#94a3b8;
-            --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --info:#38bdf8; --accent:#818cf8; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-           background:var(--bg); color:var(--text); }
-    header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
-    header h1 { font-size:18px; margin:0; }
-    header span { color:var(--muted); font-size:13px; }
-    .wrap { display:grid; grid-template-columns: 1fr 1fr; gap:18px; padding:18px 24px; }
-    @media (max-width: 960px) { .wrap { grid-template-columns:1fr; } }
-    .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
-    .card h2 { font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
-    label { font-size:12px; color:var(--muted); display:block; margin:8px 0 4px; }
-    select, textarea, button, input { font:inherit; }
-    select, input[type=text], input[type=number], input[type=date] {
-      width:100%; padding:8px; background:#0b1220; color:var(--text); border:1px solid var(--line); border-radius:8px; }
-    textarea { width:100%; height:320px; padding:10px; background:#0b1220; color:var(--text);
-               border:1px solid var(--line); border-radius:8px; font-family: ui-monospace, monospace; font-size:12px; }
-    button { margin-top:12px; padding:10px 16px; background:var(--accent); color:#0b1020; border:0;
-             border-radius:8px; font-weight:600; cursor:pointer; }
-    button:hover { filter:brightness(1.08); }
-    .tabs { display:flex; gap:8px; margin-bottom:12px; }
-    .tab { padding:6px 14px; border:1px solid var(--line); border-radius:999px; background:#0b1220;
-           color:var(--muted); cursor:pointer; font-size:13px; margin:0; }
-    .tab.active { background:var(--accent); color:#0b1020; font-weight:700; }
-    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-    .drop { border:2px dashed var(--line); border-radius:10px; padding:22px; text-align:center;
-            color:var(--muted); cursor:pointer; background:#0b1220; }
-    .drop.hover { border-color:var(--accent); color:var(--text); }
-    .files { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
-    .file { width:120px; border:1px solid var(--line); border-radius:8px; padding:8px; background:#0b1220; font-size:11px; }
-    .file img { width:100%; height:64px; object-fit:cover; border-radius:6px; }
-    .file .pdf { height:64px; display:flex; align-items:center; justify-content:center; font-size:24px; background:#1e293b; border-radius:6px; }
-    .file .nm { margin-top:6px; word-break:break-all; color:var(--muted); }
-    .hidden { display:none; }
-    .badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; }
-    .APPROVED { background:rgba(34,197,94,.15); color:var(--ok); }
-    .PARTIAL { background:rgba(56,189,248,.15); color:var(--info); }
-    .REJECTED { background:rgba(239,68,68,.15); color:var(--bad); }
-    .MANUAL_REVIEW { background:rgba(245,158,11,.15); color:var(--warn); }
-    .BLOCKED { background:rgba(245,158,11,.15); color:var(--warn); }
-    .kv { font-size:14px; margin:6px 0; }
-    .kv b { color:var(--muted); font-weight:600; }
-    .issue { border-left:3px solid var(--warn); padding:8px 12px; margin:8px 0; background:#0b1220; border-radius:0 8px 8px 0; }
-    .explain { background:#0b1220; border:1px solid var(--line); border-radius:8px; padding:12px; margin:10px 0; }
-    table.trace { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
-    table.trace td { border-top:1px solid var(--line); padding:6px 8px; vertical-align:top; }
-    .st { font-weight:700; }
-    .st.OK { color:var(--ok); } .st.BLOCKED { color:var(--warn); }
-    .st.FAILED { color:var(--bad); } .st.SKIPPED { color:var(--muted); }
-    .muted { color:var(--muted); font-size:12px; }
-    .line { display:flex; justify-content:space-between; padding:4px 0; font-size:13px; }
-    .line.no { color:var(--bad); } .line.yes { color:var(--ok); }
+    :root{
+      --bg:#f4f5fb; --surface:#ffffff; --surface-2:#f7f8fc; --inset:#fbfbfe;
+      --border:#e6e8f1; --border-strong:#d7dae8;
+      --text:#161a27; --muted:#6b7185; --faint:#9aa0b4;
+      --brand:#6d28d9; --brand-2:#7c3aed; --brand-soft:#f3effe; --brand-ring:rgba(124,58,237,.18);
+      --ok:#16a34a; --ok-soft:#ecfdf3; --ok-bd:#bbf7d0;
+      --info:#2563eb; --info-soft:#eff5ff; --info-bd:#bfd6fe;
+      --warn:#b45309; --warn-soft:#fff8eb; --warn-bd:#fde6b0;
+      --bad:#dc2626; --bad-soft:#fef2f2; --bad-bd:#fecaca;
+      --shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.06);
+      --shadow-sm:0 1px 2px rgba(16,24,40,.05);
+      --radius:14px;
+    }
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font-family:"Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+    }
+    a{ color:var(--brand); }
+
+    /* ---------- top bar ---------- */
+    .topbar{ background:var(--surface); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:20; }
+    .topbar-in{ max-width:1180px; margin:0 auto; padding:14px 24px; display:flex; align-items:center; gap:14px; }
+    .logo{ display:flex; align-items:center; gap:10px; }
+    .logo .mark{ width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,var(--brand-2),var(--brand));
+      display:grid; place-items:center; color:#fff; font-weight:800; font-size:16px; box-shadow:0 4px 12px var(--brand-ring); }
+    .logo .name{ font-weight:700; font-size:16px; letter-spacing:-.01em; }
+    .logo .sub{ color:var(--faint); font-weight:600; font-size:12px; padding-left:10px; margin-left:4px; border-left:1px solid var(--border); }
+    .spacer{ flex:1; }
+    .member-chip{ display:flex; align-items:center; gap:8px; background:var(--surface-2); border:1px solid var(--border);
+      padding:6px 12px 6px 8px; border-radius:999px; font-size:12.5px; color:var(--muted); font-weight:600; }
+    .member-chip .av{ width:22px; height:22px; border-radius:50%; background:var(--brand-soft); color:var(--brand);
+      display:grid; place-items:center; font-weight:800; font-size:11px; }
+    .member-chip b{ color:var(--text); }
+    .dot-live{ width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 3px var(--ok-soft); }
+
+    /* ---------- layout ---------- */
+    .page{ max-width:1180px; margin:0 auto; padding:22px 24px 56px; }
+    .page-head{ margin:6px 2px 18px; }
+    .page-head h1{ font-size:21px; margin:0 0 4px; letter-spacing:-.02em; }
+    .page-head p{ margin:0; color:var(--muted); font-size:13.5px; }
+    .grid{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.05fr); gap:20px; align-items:start; }
+    @media (max-width:940px){ .grid{ grid-template-columns:1fr; } }
+
+    .card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
+    .card-head{ padding:16px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; }
+    .card-head .ic{ width:30px; height:30px; border-radius:8px; background:var(--brand-soft); color:var(--brand); display:grid; place-items:center; }
+    .card-head h2{ font-size:14.5px; margin:0; font-weight:700; letter-spacing:-.01em; }
+    .card-head p{ margin:1px 0 0; font-size:12px; color:var(--muted); }
+    .card-body{ padding:18px; }
+    .result-card{ position:sticky; top:78px; }
+    @media (max-width:940px){ .result-card{ position:static; } }
+
+    /* ---------- tabs ---------- */
+    .tabs{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:3px; gap:3px; margin-bottom:16px; }
+    .tab{ padding:7px 14px; border:0; background:transparent; color:var(--muted); cursor:pointer; font-size:13px; font-weight:600;
+      border-radius:7px; font-family:inherit; transition:all .15s; }
+    .tab.active{ background:var(--surface); color:var(--brand); box-shadow:var(--shadow-sm); }
+
+    /* ---------- form ---------- */
+    .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px 14px; }
+    @media (max-width:480px){ .grid2{ grid-template-columns:1fr; } }
+    .field{ display:flex; flex-direction:column; }
+    .field.full{ grid-column:1 / -1; }
+    label{ font-size:12px; color:var(--muted); font-weight:600; margin:0 0 6px; }
+    label .opt{ color:var(--faint); font-weight:500; }
+    input, select, textarea{ font:inherit; color:var(--text); width:100%; background:var(--surface);
+      border:1px solid var(--border-strong); border-radius:10px; padding:10px 12px; transition:border-color .15s, box-shadow .15s; }
+    input::placeholder{ color:var(--faint); }
+    input:focus, select:focus, textarea:focus{ outline:0; border-color:var(--brand-2); box-shadow:0 0 0 3px var(--brand-ring); }
+    select{ appearance:none; -webkit-appearance:none; cursor:pointer;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7185' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat:no-repeat; background-position:right 12px center; padding-right:34px; }
+    .with-prefix{ position:relative; }
+    .with-prefix .pfx{ position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--muted); font-weight:600; pointer-events:none; }
+    .with-prefix input{ padding-left:26px; }
+    textarea{ height:300px; resize:vertical; font-family:ui-monospace, "SF Mono", Menlo, monospace; font-size:12.5px; line-height:1.6; }
+
+    /* ---------- dropzone ---------- */
+    .drop{ margin-top:6px; border:1.5px dashed var(--border-strong); border-radius:12px; padding:24px; text-align:center;
+      color:var(--muted); cursor:pointer; background:var(--inset); transition:all .15s; }
+    .drop:hover, .drop.hover{ border-color:var(--brand-2); background:var(--brand-soft); color:var(--brand); }
+    .drop .di{ display:grid; place-items:center; margin:0 auto 8px; width:40px; height:40px; border-radius:10px;
+      background:var(--surface); border:1px solid var(--border); color:var(--brand); box-shadow:var(--shadow-sm); }
+    .drop b{ color:var(--text); font-weight:600; }
+    .drop small{ display:block; margin-top:3px; font-size:11.5px; color:var(--faint); }
+    .filelist{ margin-top:12px; display:flex; flex-direction:column; gap:8px; }
+    .filerow{ display:flex; align-items:center; gap:11px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:9px 11px; }
+    .filerow .ficon{ width:34px; height:34px; border-radius:8px; flex:none; display:grid; place-items:center; font-size:15px;
+      background:var(--brand-soft); color:var(--brand); overflow:hidden; }
+    .filerow .ficon img{ width:100%; height:100%; object-fit:cover; }
+    .filerow .fmeta{ min-width:0; flex:1; }
+    .filerow .fname{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .filerow .fsize{ font-size:11.5px; color:var(--faint); }
+    .filerow .frm{ flex:none; border:0; background:transparent; color:var(--faint); cursor:pointer; padding:6px; border-radius:7px; line-height:0; }
+    .filerow .frm:hover{ background:var(--bad-soft); color:var(--bad); }
+
+    /* ---------- buttons ---------- */
+    .btn{ margin-top:16px; width:100%; display:inline-flex; align-items:center; justify-content:center; gap:8px;
+      padding:12px 18px; background:linear-gradient(135deg,var(--brand-2),var(--brand)); color:#fff; border:0;
+      border-radius:11px; font-weight:600; font-size:14px; cursor:pointer; font-family:inherit; box-shadow:0 6px 16px var(--brand-ring);
+      transition:transform .12s, box-shadow .12s, opacity .15s; }
+    .btn:hover{ transform:translateY(-1px); box-shadow:0 10px 22px var(--brand-ring); }
+    .btn:active{ transform:translateY(0); }
+    .btn:disabled{ opacity:.65; cursor:progress; transform:none; }
+    .btn .spin{ width:15px; height:15px; }
+
+    /* ---------- result: empty / error ---------- */
+    .empty{ text-align:center; padding:46px 18px; color:var(--muted); }
+    .empty .eic{ width:54px; height:54px; border-radius:14px; margin:0 auto 14px; display:grid; place-items:center;
+      background:var(--brand-soft); color:var(--brand); }
+    .empty h3{ margin:0 0 6px; color:var(--text); font-size:15px; }
+    .empty p{ margin:0 auto; max-width:300px; font-size:13px; }
+    .chips{ display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin-top:16px; }
+    .chip{ font-size:11.5px; font-weight:600; color:var(--muted); background:var(--surface-2); border:1px solid var(--border); padding:5px 10px; border-radius:999px; }
+    .errbox{ display:flex; gap:11px; padding:14px; border:1px solid var(--bad-bd); background:var(--bad-soft); border-radius:12px; color:var(--bad); }
+    .errbox b{ display:block; color:var(--text); margin-bottom:2px; }
+
+    /* ---------- decision banner ---------- */
+    .banner{ display:flex; align-items:center; gap:14px; padding:16px; border-radius:12px; border:1px solid; }
+    .banner .bic{ width:42px; height:42px; border-radius:11px; flex:none; display:grid; place-items:center; }
+    .banner .bt{ flex:1; min-width:0; }
+    .banner .bt .lab{ font-size:16px; font-weight:700; letter-spacing:-.01em; }
+    .banner .bt .sl{ font-size:13px; margin-top:2px; opacity:.92; }
+    .banner .amt{ text-align:right; flex:none; }
+    .banner .amt .n{ font-size:24px; font-weight:800; letter-spacing:-.02em; line-height:1; }
+    .banner .amt .c{ font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; opacity:.7; }
+    .banner.ok{ background:var(--ok-soft); border-color:var(--ok-bd); color:var(--ok); }
+    .banner.info{ background:var(--info-soft); border-color:var(--info-bd); color:var(--info); }
+    .banner.bad{ background:var(--bad-soft); border-color:var(--bad-bd); color:var(--bad); }
+    .banner.warn{ background:var(--warn-soft); border-color:var(--warn-bd); color:var(--warn); }
+    .banner .bic.ok{ background:#fff; color:var(--ok); } .banner .bic.info{ background:#fff; color:var(--info); }
+    .banner .bic.bad{ background:#fff; color:var(--bad); } .banner .bic.warn{ background:#fff; color:var(--warn); }
+    .banner .lab, .banner .sl, .banner .amt .n{ color:var(--text); }
+
+    .meta-row{ display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 2px; }
+    .pill{ font-size:11.5px; font-weight:600; padding:4px 10px; border-radius:999px; border:1px solid var(--border); background:var(--surface-2); color:var(--muted); }
+    .pill.warn{ background:var(--warn-soft); border-color:var(--warn-bd); color:var(--warn); }
+    .pill code{ font-family:ui-monospace, Menlo, monospace; color:var(--text); }
+
+    /* ---------- confidence ---------- */
+    .conf{ margin-top:16px; }
+    .conf .top{ display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:6px; }
+    .conf .top b{ font-weight:600; color:var(--muted); }
+    .conf .top span{ font-weight:700; }
+    .conf .track{ height:8px; background:var(--surface-2); border:1px solid var(--border); border-radius:999px; overflow:hidden; }
+    .conf .fill{ height:100%; border-radius:999px; transition:width .5s ease; }
+    .conf .fill.ok{ background:var(--ok); } .conf .fill.warn{ background:var(--warn); } .conf .fill.bad{ background:var(--bad); }
+
+    /* ---------- generic result section ---------- */
+    .section{ margin-top:18px; }
+    .section > .sh{ font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--faint); margin:0 0 9px; }
+    .panel{ border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+
+    /* money-math waterfall */
+    .wf{ padding:4px 14px; }
+    .wf .r{ display:flex; justify-content:space-between; align-items:center; padding:10px 0; font-size:13.5px; border-bottom:1px dashed var(--border); }
+    .wf .r:last-child{ border-bottom:0; }
+    .wf .r .k{ color:var(--muted); display:flex; align-items:center; gap:8px; }
+    .wf .r .v{ font-weight:600; font-variant-numeric:tabular-nums; }
+    .wf .r.minus .v{ color:var(--bad); }
+    .wf .r.total{ border-top:2px solid var(--border); border-bottom:0; margin-top:2px; padding-top:13px; }
+    .wf .r.total .k{ color:var(--text); font-weight:700; font-size:14px; }
+    .wf .r.total .v{ color:var(--ok); font-weight:800; font-size:18px; }
+    .tag-net{ font-size:10.5px; font-weight:700; color:var(--ok); background:var(--ok-soft); border:1px solid var(--ok-bd); padding:1px 7px; border-radius:999px; }
+    .tag-cap{ font-size:10.5px; font-weight:700; color:var(--warn); background:var(--warn-soft); border:1px solid var(--warn-bd); padding:1px 7px; border-radius:999px; }
+
+    /* line items */
+    .li{ display:flex; align-items:flex-start; gap:10px; padding:11px 14px; border-bottom:1px solid var(--border); font-size:13px; }
+    .li:last-child{ border-bottom:0; }
+    .li .mk{ width:20px; height:20px; border-radius:50%; flex:none; display:grid; place-items:center; margin-top:1px; }
+    .li.yes .mk{ background:var(--ok-soft); color:var(--ok); } .li.no .mk{ background:var(--bad-soft); color:var(--bad); }
+    .li .body{ flex:1; min-width:0; } .li .body .d{ font-weight:600; } .li .body .rsn{ color:var(--muted); font-size:12px; margin-top:1px; }
+    .li .val{ font-weight:600; font-variant-numeric:tabular-nums; } .li.no .val{ color:var(--muted); text-decoration:line-through; }
+
+    /* blocking / reasons */
+    .alert{ display:flex; gap:11px; padding:13px 14px; border:1px solid var(--warn-bd); background:var(--warn-soft); border-radius:12px; margin-bottom:9px; }
+    .alert.bad{ border-color:var(--bad-bd); background:var(--bad-soft); }
+    .alert .ai{ color:var(--warn); flex:none; margin-top:1px; } .alert.bad .ai{ color:var(--bad); }
+    .alert b{ display:block; font-size:13px; } .alert p{ margin:2px 0 0; font-size:12.5px; color:var(--muted); }
+    .reasons{ display:flex; flex-wrap:wrap; gap:8px; }
+    .reason{ font-size:12px; font-weight:600; color:var(--bad); background:var(--bad-soft); border:1px solid var(--bad-bd); padding:6px 11px; border-radius:9px; }
+
+    /* explanation */
+    .msg{ display:flex; gap:12px; padding:15px; border:1px solid var(--brand-soft); background:linear-gradient(180deg,var(--brand-soft),#fff); border-radius:12px; }
+    .msg .av{ width:32px; height:32px; border-radius:9px; flex:none; background:linear-gradient(135deg,var(--brand-2),var(--brand)); color:#fff; display:grid; place-items:center; font-weight:800; }
+    .msg .mc .who{ font-size:11.5px; font-weight:700; color:var(--brand); margin-bottom:4px; }
+    .msg .mc .body{ font-size:13.5px; color:var(--text); line-height:1.6; }
+    .msg .mc .body strong{ font-weight:700; }
+
+    /* trace timeline */
+    .trace-wrap{ border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    .trace-wrap > summary{ list-style:none; cursor:pointer; padding:13px 15px; display:flex; align-items:center; gap:8px;
+      font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); user-select:none; }
+    .trace-wrap > summary::-webkit-details-marker{ display:none; }
+    .trace-wrap > summary .cv{ margin-left:auto; transition:transform .2s; color:var(--faint); }
+    .trace-wrap[open] > summary .cv{ transform:rotate(180deg); }
+    .trace-wrap > summary .count{ font-weight:600; text-transform:none; letter-spacing:0; color:var(--faint); }
+    .timeline{ list-style:none; margin:0; padding:4px 16px 14px; position:relative; }
+    .timeline li{ position:relative; padding:0 0 4px 24px; }
+    .timeline li::before{ content:""; position:absolute; left:6px; top:16px; bottom:-6px; width:2px; background:var(--border); }
+    .timeline li:last-child::before{ display:none; }
+    .tl-dot{ position:absolute; left:0; top:6px; width:14px; height:14px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px var(--border); }
+    .tl-dot.OK{ background:var(--ok); } .tl-dot.BLOCKED{ background:var(--warn); }
+    .tl-dot.FAILED{ background:var(--bad); } .tl-dot.SKIPPED{ background:var(--faint); }
+    .tl-item{ padding:7px 0; }
+    .tl-head{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .tl-title{ font-size:13px; font-weight:600; }
+    .tl-head code{ font-family:ui-monospace, Menlo, monospace; font-size:11px; color:var(--faint); }
+    .tl-st{ margin-left:auto; font-size:10.5px; font-weight:700; padding:1px 8px; border-radius:999px; }
+    .tl-st.OK{ color:var(--ok); background:var(--ok-soft); } .tl-st.BLOCKED{ color:var(--warn); background:var(--warn-soft); }
+    .tl-st.FAILED{ color:var(--bad); background:var(--bad-soft); } .tl-st.SKIPPED{ color:var(--faint); background:var(--surface-2); }
+    .tl-detail{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+
+    /* sample loader */
+    .helper{ font-size:12px; color:var(--muted); margin:-2px 0 14px; }
+
+    /* ---------- loading: bar + skeleton + spinner ---------- */
+    .bar{ height:3px; width:100%; background:var(--brand-soft); border-radius:999px; overflow:hidden; margin-bottom:18px; }
+    .bar i{ display:block; height:100%; width:38%; border-radius:999px; background:var(--brand);
+      animation:indet 1.15s cubic-bezier(.4,0,.2,1) infinite; }
+    @keyframes indet{ 0%{ margin-left:-38%; } 100%{ margin-left:100%; } }
+    .sk{ position:relative; overflow:hidden; background:#eceef5; border-radius:8px; }
+    .sk::after{ content:""; position:absolute; inset:0; transform:translateX(-100%);
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,.65), transparent); animation:shimmer 1.4s infinite; }
+    @keyframes shimmer{ 100%{ transform:translateX(100%); } }
+    .sk-banner{ height:74px; border-radius:12px; }
+    .sk-row{ height:12px; margin:10px 0; }
+    .sk-card{ border:1px solid var(--border); border-radius:12px; padding:14px; margin-top:18px; }
+    .sk-pair{ display:flex; align-items:center; gap:10px; }
+    .sk-pair .sk{ height:12px; flex:1; } .sk-pair .d{ width:14px; height:14px; border-radius:50%; }
+    .loading-note{ display:flex; align-items:center; gap:9px; color:var(--muted); font-size:13px; margin:18px 0 0; }
+    .spin{ width:16px; height:16px; border:2px solid var(--brand-soft); border-top-color:var(--brand); border-radius:50%; animation:rot .7s linear infinite; flex:none; }
+    @keyframes rot{ to{ transform:rotate(360deg); } }
+    .hidden{ display:none !important; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Plum Claims</h1><span>Submit a claim, see the decision and the full trace.</span>
-  </header>
-  <div class="wrap">
-    <div class="card">
-      <h2>Submit a claim</h2>
-      <div class="tabs">
-        <button class="tab active" id="tab-upload" type="button">Upload documents</button>
-        <button class="tab" id="tab-json" type="button">JSON (advanced)</button>
-      </div>
-
-      <!-- Upload mode: real images/PDFs → POST /claims/upload (vision) -->
-      <div id="mode-upload">
-        <div class="grid2">
-          <div><label>Member ID</label><input type="text" id="u_member" value="EMP001"></div>
-          <div><label>Policy ID</label><input type="text" id="u_policy" value="PLUM_GHI_2024"></div>
-          <div><label>Category</label>
-            <select id="u_category">
-              <option>CONSULTATION</option><option>DIAGNOSTIC</option><option>PHARMACY</option>
-              <option>DENTAL</option><option>VISION</option><option>ALTERNATIVE_MEDICINE</option>
-            </select>
-          </div>
-          <div><label>Treatment date</label><input type="date" id="u_date" value="2024-11-01"></div>
-          <div><label>Claimed amount (₹)</label><input type="number" id="u_amount" value="1500"></div>
-          <div><label>Hospital name (optional)</label><input type="text" id="u_hospital" placeholder="e.g. Apollo Hospitals"></div>
+  <div class="topbar">
+    <div class="topbar-in">
+      <div class="logo">
+        <div class="mark">P</div>
+        <div>
+          <span class="name">Plum Health</span>
+          <span class="sub">Claims</span>
         </div>
-        <label>Documents (images / PDFs)</label>
-        <div class="drop" id="drop">⬆ Drag &amp; drop or click to upload images / PDFs</div>
-        <input type="file" id="files" class="hidden" multiple accept="image/*,application/pdf">
-        <div class="files" id="thumbs"></div>
-        <button id="submit-upload" type="button">Process claim →</button>
       </div>
-
-      <!-- JSON mode: deterministic path, also loads the 12 test cases -->
-      <div id="mode-json" class="hidden">
-        <label for="sample">Load a sample (the 12 test cases)</label>
-        <select id="sample"><option value="">— choose a test case —</option></select>
-        <label for="payload">Claim JSON</label>
-        <textarea id="payload" spellcheck="false"></textarea>
-        <button id="submit-json" type="button">Process claim →</button>
+      <div class="spacer"></div>
+      <div class="member-chip">
+        <span class="av" id="member-av">E</span>
+        Member <b id="member-chip">EMP001</b>
+        <span class="dot-live" title="Connected"></span>
       </div>
-    </div>
-    <div class="card">
-      <h2>Decision &amp; trace</h2>
-      <div id="result"><p class="muted">Submit a claim to see the result here.</p></div>
     </div>
   </div>
+
+  <main class="page">
+    <div class="page-head">
+      <h1>File a claim</h1>
+      <p>Submit your treatment details and documents — get an instant decision, payout breakdown and a full audit trail.</p>
+    </div>
+
+    <div class="grid">
+      <!-- ============ SUBMIT ============ -->
+      <section class="card">
+        <div class="card-head">
+          <div class="ic" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 11h2"/></svg>
+          </div>
+          <div>
+            <h2>Submit a claim</h2>
+            <p>Reimbursement request</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="tabs">
+            <button class="tab active" id="tab-upload" type="button">Upload documents</button>
+            <button class="tab" id="tab-json" type="button">JSON (advanced)</button>
+          </div>
+
+          <!-- Upload mode -->
+          <div id="mode-upload">
+            <div class="grid2">
+              <div class="field"><label for="u_member">Member ID</label><input type="text" id="u_member" value="EMP001"></div>
+              <div class="field"><label for="u_policy">Policy ID</label><input type="text" id="u_policy" value="PLUM_GHI_2024"></div>
+              <div class="field"><label for="u_category">Category</label>
+                <select id="u_category">
+                  <option>CONSULTATION</option><option>DIAGNOSTIC</option><option>PHARMACY</option>
+                  <option>DENTAL</option><option>VISION</option><option>ALTERNATIVE_MEDICINE</option>
+                </select>
+              </div>
+              <div class="field"><label for="u_date">Treatment date</label><input type="date" id="u_date" value="2024-11-01"></div>
+              <div class="field"><label for="u_amount">Claimed amount</label>
+                <div class="with-prefix"><span class="pfx">₹</span><input type="number" id="u_amount" value="1500" min="0" step="1"></div>
+              </div>
+              <div class="field"><label for="u_hospital">Hospital name <span class="opt">(optional)</span></label><input type="text" id="u_hospital" placeholder="e.g. Apollo Hospitals"></div>
+            </div>
+
+            <div class="field full" style="margin-top:14px;">
+              <label>Documents <span class="opt">— bills, prescriptions, reports (images / PDF)</span></label>
+              <div class="drop" id="drop" role="button" tabindex="0">
+                <div class="di" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+                </div>
+                <b>Drag &amp; drop, or click to browse</b>
+                <small>JPG, PNG or PDF · up to 10 files</small>
+              </div>
+              <input type="file" id="files" class="hidden" multiple accept="image/*,application/pdf">
+              <div class="filelist" id="filelist"></div>
+            </div>
+
+            <button class="btn" id="submit-upload" type="button">
+              <span id="su-label">Process claim</span>
+              <svg id="su-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+
+          <!-- JSON mode -->
+          <div id="mode-json" class="hidden">
+            <div class="field"><label for="sample">Load a sample claim</label>
+              <select id="sample"><option value="">— choose one of the 12 test cases —</option></select>
+            </div>
+            <p class="helper">Picks one of the provided test cases and fills the JSON below. This path runs the deterministic engine.</p>
+            <div class="field"><label for="payload">Claim JSON</label><textarea id="payload" spellcheck="false"></textarea></div>
+            <button class="btn" id="submit-json" type="button">
+              <span id="sj-label">Process claim</span>
+              <svg id="sj-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ DECISION ============ -->
+      <section class="card result-card">
+        <div class="card-head">
+          <div class="ic" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          </div>
+          <div>
+            <h2>Decision &amp; audit trail</h2>
+            <p>Outcome, payout breakdown and processing trace</p>
+          </div>
+        </div>
+        <div class="card-body" id="result">
+          <div class="empty">
+            <div class="eic" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/></svg>
+            </div>
+            <h3>No claim submitted yet</h3>
+            <p>Fill in the form and add your documents. Your decision, payout breakdown and full audit trail will appear here.</p>
+            <div class="chips">
+              <span class="chip">⚡ Instant decision</span>
+              <span class="chip">₹ Payout breakdown</span>
+              <span class="chip">🔍 Full audit trail</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
 
 <script>
 const $ = (id) => document.getElementById(id);
 let SAMPLES = [];
 let PICKED = [];
+let lastClaimed = null;
 
-/* ---- tab switching ---- */
-function setMode(mode) {
+/* ---------- icons ---------- */
+const ICON = {
+  check: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  cross: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  clock: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  alert: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>',
+  alertSm: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>',
+  tick: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  x: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  chevron: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  trash: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
+  pdf: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+};
+
+/* ---------- helpers ---------- */
+function esc(s){ return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function mdLite(s){ return esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br>"); }
+function humanize(s){ return String(s ?? "").replace(/[._]+/g, " ").replace(/\b\w/g, c => c.toUpperCase()); }
+function inr(n){ if (n == null || isNaN(n)) return "—"; return "₹" + Number(n).toLocaleString("en-IN", {maximumFractionDigits:2}); }
+function fileSize(b){ if (b < 1024) return b + " B"; if (b < 1048576) return (b/1024).toFixed(0) + " KB"; return (b/1048576).toFixed(1) + " MB"; }
+
+/* ---------- tabs ---------- */
+function setMode(mode){
   const up = mode === "upload";
   $("tab-upload").classList.toggle("active", up);
   $("tab-json").classList.toggle("active", !up);
@@ -125,116 +406,248 @@ function setMode(mode) {
 $("tab-upload").addEventListener("click", () => setMode("upload"));
 $("tab-json").addEventListener("click", () => setMode("json"));
 
-/* ---- JSON mode (existing behavior) ---- */
-async function loadSamples() {
-  const res = await fetch("/sample-claims");
-  SAMPLES = await res.json();
-  const sel = $("sample");
-  SAMPLES.forEach((c, i) => {
-    const o = document.createElement("option");
-    o.value = i; o.textContent = `${c.case_id} — ${c.case_name}`;
-    sel.appendChild(o);
-  });
+/* ---------- member chip ---------- */
+$("u_member").addEventListener("input", (e) => {
+  const v = e.target.value.trim() || "—";
+  $("member-chip").textContent = v;
+  $("member-av").textContent = (v[0] || "?").toUpperCase();
+});
+
+/* ---------- JSON samples ---------- */
+async function loadSamples(){
+  try {
+    const res = await fetch("/sample-claims");
+    SAMPLES = await res.json();
+    const sel = $("sample");
+    SAMPLES.forEach((c, i) => {
+      const o = document.createElement("option");
+      o.value = i; o.textContent = `${c.case_id} — ${c.case_name}`;
+      sel.appendChild(o);
+    });
+  } catch (e) { /* samples are optional */ }
 }
-$("sample")?.addEventListener("change", (e) => {
+$("sample").addEventListener("change", (e) => {
   const i = e.target.value;
   if (i === "") return;
   $("payload").value = JSON.stringify(SAMPLES[i].input, null, 2);
 });
 
-/* ---- Upload mode ---- */
-function renderThumbs() {
-  const box = $("thumbs"); box.innerHTML = "";
-  PICKED.forEach((f) => {
-    const div = document.createElement("div"); div.className = "file";
-    if (f.type === "application/pdf") {
-      div.innerHTML = `<div class="pdf">📄</div><div class="nm">${esc(f.name)}</div>`;
-    } else {
-      const url = URL.createObjectURL(f);
-      div.innerHTML = `<img src="${url}" alt=""><div class="nm">${esc(f.name)}</div>`;
-    }
-    box.appendChild(div);
+/* ---------- file picking ---------- */
+function renderFiles(){
+  const box = $("filelist"); box.innerHTML = "";
+  PICKED.forEach((f, idx) => {
+    const row = document.createElement("div"); row.className = "filerow";
+    const icon = document.createElement("div"); icon.className = "ficon";
+    if (f.type === "application/pdf") { icon.innerHTML = ICON.pdf; }
+    else { const img = document.createElement("img"); img.src = URL.createObjectURL(f); icon.appendChild(img); }
+    const meta = document.createElement("div"); meta.className = "fmeta";
+    meta.innerHTML = `<div class="fname">${esc(f.name)}</div><div class="fsize">${fileSize(f.size)}</div>`;
+    const rm = document.createElement("button"); rm.className = "frm"; rm.type = "button"; rm.title = "Remove"; rm.innerHTML = ICON.trash;
+    rm.addEventListener("click", () => { PICKED.splice(idx, 1); renderFiles(); });
+    row.append(icon, meta, rm); box.appendChild(row);
   });
 }
 $("drop").addEventListener("click", () => $("files").click());
-$("files").addEventListener("change", (e) => { PICKED = Array.from(e.target.files); renderThumbs(); });
-["dragover","dragenter"].forEach(ev => $("drop").addEventListener(ev, (e) => {
-  e.preventDefault(); $("drop").classList.add("hover");
-}));
-["dragleave","drop"].forEach(ev => $("drop").addEventListener(ev, (e) => {
-  e.preventDefault(); $("drop").classList.remove("hover");
-}));
-$("drop").addEventListener("drop", (e) => { PICKED = Array.from(e.dataTransfer.files); renderThumbs(); });
+$("drop").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("files").click(); } });
+$("files").addEventListener("change", (e) => { PICKED = PICKED.concat(Array.from(e.target.files)); renderFiles(); e.target.value = ""; });
+["dragover","dragenter"].forEach(ev => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("hover"); }));
+["dragleave","dragend"].forEach(ev => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.remove("hover"); }));
+$("drop").addEventListener("drop", (e) => { e.preventDefault(); $("drop").classList.remove("hover"); PICKED = PICKED.concat(Array.from(e.dataTransfer.files)); renderFiles(); });
 
+/* ---------- loading (skeleton + bar + spinner) ---------- */
+function setBusy(btn, labelId, arrowId, busy, busyText){
+  $(btn).disabled = busy;
+  $(labelId).textContent = busy ? busyText : "Process claim";
+  $(arrowId).outerHTML = busy
+    ? `<span class="spin" id="${arrowId}"></span>`
+    : `<svg id="${arrowId}" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>`;
+}
+function showLoading(note){
+  $("result").innerHTML = `
+    <div class="bar"><i></i></div>
+    <div class="sk sk-banner"></div>
+    <div class="sk sk-row" style="width:42%"></div>
+    <div class="sk-card">
+      <div class="sk sk-row" style="width:38%;margin-top:2px"></div>
+      <div class="sk sk-row"></div>
+      <div class="sk sk-row" style="width:88%"></div>
+      <div class="sk sk-row" style="width:64%"></div>
+    </div>
+    <div class="sk-card">
+      <div class="sk sk-row" style="width:30%;margin-top:2px"></div>
+      <div class="sk-pair"><span class="sk d"></span><span class="sk"></span></div>
+      <div class="sk-pair"><span class="sk d"></span><span class="sk" style="max-width:70%"></span></div>
+      <div class="sk-pair"><span class="sk d"></span><span class="sk" style="max-width:85%"></span></div>
+    </div>
+    <p class="loading-note"><span class="spin"></span>${esc(note)}</p>`;
+}
+
+/* ---------- render result ---------- */
+const META = {
+  APPROVED:      { cls:"ok",   icon:ICON.check, title:"Claim approved" },
+  PARTIAL:       { cls:"info", icon:ICON.check, title:"Partially approved" },
+  REJECTED:      { cls:"bad",  icon:ICON.cross, title:"Claim rejected" },
+  MANUAL_REVIEW: { cls:"warn", icon:ICON.clock, title:"Sent for manual review" },
+  BLOCKED:       { cls:"warn", icon:ICON.alert, title:"Action needed" },
+};
+
+function render(body){
+  const r = $("result");
+
+  if (body.detail){
+    const msg = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+    r.innerHTML = `<div class="errbox">${ICON.alertSm}<div><b>We couldn't process that</b>${esc(msg)}</div></div>`;
+    return;
+  }
+
+  const key = body.decision || body.status;       // APPROVED / PARTIAL / REJECTED / MANUAL_REVIEW / BLOCKED
+  const m = META[key] || META.BLOCKED;
+  const reasons = (body.rejection_reasons || []).map(humanize);
+  const showAmount = (key === "APPROVED" || key === "PARTIAL");
+
+  let sub;
+  if (showAmount) sub = `${inr(body.approved_amount)} approved for reimbursement`;
+  else if (key === "REJECTED") sub = reasons.length ? reasons.join(" · ") : "This claim could not be approved.";
+  else if (key === "MANUAL_REVIEW") sub = "A claims specialist will review this and follow up.";
+  else sub = "Resolve the items below, then resubmit your claim.";
+
+  let h = "";
+
+  /* banner */
+  h += `<div class="banner ${m.cls}">
+    <div class="bic ${m.cls}">${m.icon}</div>
+    <div class="bt"><div class="lab">${esc(m.title)}</div><div class="sl">${esc(sub)}</div></div>
+    ${showAmount ? `<div class="amt"><div class="n">${inr(body.approved_amount)}</div><div class="c">Payout</div></div>` : ``}
+  </div>`;
+
+  /* meta pills */
+  h += `<div class="meta-row">`;
+  if (body.claim_id) h += `<span class="pill">Claim <code>${esc(body.claim_id)}</code></span>`;
+  h += `<span class="pill">Status: ${esc(humanize(body.status || ""))}</span>`;
+  if (body.degraded) h += `<span class="pill warn">⚠ Degraded processing</span>`;
+  h += `</div>`;
+
+  /* confidence */
+  if (body.confidence != null){
+    const pct = Math.round(body.confidence * 100);
+    const c = pct >= 85 ? "ok" : pct >= 60 ? "warn" : "bad";
+    h += `<div class="conf">
+      <div class="top"><b>Decision confidence</b><span>${pct}%</span></div>
+      <div class="track"><div class="fill ${c}" style="width:${pct}%"></div></div>
+    </div>`;
+  }
+
+  /* explanation */
+  if (body.explanation){
+    h += `<div class="section"><div class="msg">
+      <div class="av">P</div>
+      <div class="mc"><div class="who">What this means for you</div><div class="body">${mdLite(body.explanation)}</div></div>
+    </div></div>`;
+  }
+
+  /* blocking issues */
+  if ((body.blocking_issues || []).length){
+    h += `<div class="section"><div class="sh">What needs fixing</div>`;
+    body.blocking_issues.forEach(i => {
+      h += `<div class="alert">${ICON.alertSm}<div><b>${esc(humanize(i.reason))}</b><p>${esc(i.message)}</p></div></div>`;
+    });
+    h += `</div>`;
+  }
+
+  /* rejection reasons */
+  if (key === "REJECTED" && reasons.length){
+    h += `<div class="section"><div class="sh">Why this was rejected</div><div class="reasons">`;
+    reasons.forEach(rs => { h += `<span class="reason">${esc(rs)}</span>`; });
+    h += `</div></div>`;
+  }
+
+  /* money-math waterfall */
+  const fb = body.financial_breakdown;
+  if (fb && fb.approved_amount != null){
+    const covered = fb.covered_base;
+    const disc = covered - fb.after_network_discount;
+    const copay = fb.after_network_discount - fb.after_copay;
+    const capped = fb.after_copay - fb.approved_amount;
+    h += `<div class="section"><div class="sh">How we calculated your payout</div><div class="panel wf">`;
+    if (lastClaimed != null) h += `<div class="r"><span class="k">Amount claimed</span><span class="v">${inr(lastClaimed)}</span></div>`;
+    h += `<div class="r"><span class="k">Eligible covered amount</span><span class="v">${inr(covered)}</span></div>`;
+    if (disc > 0.009) h += `<div class="r minus"><span class="k">Network discount (${fb.network_discount_percent}%) ${fb.is_network ? `<span class="tag-net">In-network</span>` : ``}</span><span class="v">−${inr(disc)}</span></div>`;
+    if (copay > 0.009) h += `<div class="r minus"><span class="k">Co-pay (${fb.copay_percent}%)</span><span class="v">−${inr(copay)}</span></div>`;
+    if (capped > 0.009) h += `<div class="r minus"><span class="k">Per-claim limit applied <span class="tag-cap">Capped</span></span><span class="v">−${inr(capped)}</span></div>`;
+    h += `<div class="r total"><span class="k">Approved payout</span><span class="v">${inr(fb.approved_amount)}</span></div>`;
+    h += `</div></div>`;
+  }
+
+  /* line items */
+  if ((body.line_items || []).length){
+    h += `<div class="section"><div class="sh">Itemised breakdown</div><div class="panel">`;
+    body.line_items.forEach(li => {
+      h += `<div class="li ${li.covered ? "yes" : "no"}">
+        <span class="mk">${li.covered ? ICON.tick : ICON.x}</span>
+        <div class="body"><div class="d">${esc(li.description)}</div>${li.reason ? `<div class="rsn">${esc(li.reason)}</div>` : ``}</div>
+        <span class="val">${inr(li.amount)}</span>
+      </div>`;
+    });
+    h += `</div></div>`;
+  }
+
+  /* trace timeline */
+  const trace = body.trace || [];
+  if (trace.length){
+    h += `<div class="section"><details class="trace-wrap" open>
+      <summary>Processing trace <span class="count">· ${trace.length} steps</span>${ICON.chevron.replace('<svg','<svg class="cv"')}</summary>
+      <ol class="timeline">`;
+    trace.forEach(t => {
+      h += `<li>
+        <span class="tl-dot ${t.status}"></span>
+        <div class="tl-item">
+          <div class="tl-head"><span class="tl-title">${esc(humanize(t.step))}</span><code>${esc(t.step)}</code><span class="tl-st ${t.status}">${esc(t.status)}</span></div>
+          <div class="tl-detail">${esc(t.detail)}</div>
+        </div>
+      </li>`;
+    });
+    h += `</ol></details></div>`;
+  }
+
+  r.innerHTML = h;
+}
+
+/* ---------- submit: upload ---------- */
 $("submit-upload").addEventListener("click", async () => {
-  if (!PICKED.length) { render({detail: "Please choose at least one document to upload."}); return; }
+  if (!PICKED.length){ render({detail: "Please add at least one document (bill, prescription or report) before submitting."}); return; }
   const fd = new FormData();
-  PICKED.forEach((f) => fd.append("files", f));
+  PICKED.forEach(f => fd.append("files", f));
   fd.append("member_id", $("u_member").value);
   fd.append("policy_id", $("u_policy").value);
   fd.append("claim_category", $("u_category").value);
   fd.append("treatment_date", $("u_date").value);
   fd.append("claimed_amount", $("u_amount").value);
   if ($("u_hospital").value) fd.append("hospital_name", $("u_hospital").value);
-  $("result").innerHTML = '<p class="muted">Reading documents and processing…</p>';
+  lastClaimed = parseFloat($("u_amount").value);
+
+  setBusy("submit-upload", "su-label", "su-arrow", true, "Processing…");
+  showLoading("Reading your documents and adjudicating the claim…");
   try {
-    const res = await fetch("/claims/upload", { method: "POST", body: fd });
+    const res = await fetch("/claims/upload", { method:"POST", body:fd });
     render(await res.json());
   } catch (e) { render({detail: e.message}); }
+  finally { setBusy("submit-upload", "su-label", "su-arrow", false); }
 });
 
-/* ---- shared rendering ---- */
-function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
-
-function render(body) {
-  const r = $("result");
-  if (body.detail) {
-    const msg = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
-    r.innerHTML = `<p class="st FAILED">Error: ${esc(msg)}</p>`; return;
-  }
-  let html = "";
-  const status = body.status;
-  const decision = body.decision;
-  html += `<div class="kv"><span class="badge ${decision||status}">${decision || status}</span>`;
-  if (body.degraded) html += ` <span class="badge MANUAL_REVIEW">DEGRADED</span>`;
-  html += `</div>`;
-  if (body.approved_amount != null) html += `<div class="kv"><b>Approved amount:</b> ₹${body.approved_amount}</div>`;
-  if (body.confidence != null) html += `<div class="kv"><b>Confidence:</b> ${body.confidence}</div>`;
-  if (body.rejection_reasons?.length) html += `<div class="kv"><b>Reasons:</b> ${body.rejection_reasons.join(", ")}</div>`;
-  html += `<div class="kv muted">Claim ${esc(body.claim_id)}</div>`;
-
-  if (body.explanation) html += `<div class="explain">${esc(body.explanation)}</div>`;
-
-  (body.blocking_issues||[]).forEach(i => {
-    html += `<div class="issue"><b>${esc(i.reason)}</b><br>${esc(i.message)}</div>`;
-  });
-
-  if (body.line_items?.length) {
-    html += `<div class="kv"><b>Line items</b></div>`;
-    body.line_items.forEach(li => {
-      html += `<div class="line ${li.covered?'yes':'no'}"><span>${esc(li.description)} ${li.covered?'✓':'✗'}${li.reason?' — '+esc(li.reason):''}</span><span>₹${li.amount}</span></div>`;
-    });
-  }
-
-  html += `<table class="trace">`;
-  (body.trace||[]).forEach(t => {
-    html += `<tr><td class="st ${t.status}">${t.status}</td><td><b>${esc(t.step)}</b><br><span class="muted">${esc(t.detail)}</span></td></tr>`;
-  });
-  html += `</table>`;
-  r.innerHTML = html;
-}
-
-$("submit-json")?.addEventListener("click", async () => {
+/* ---------- submit: JSON ---------- */
+$("submit-json").addEventListener("click", async () => {
   let payload;
   try { payload = JSON.parse($("payload").value); }
-  catch (e) { render({detail: "Invalid JSON: " + e.message}); return; }
-  $("result").innerHTML = '<p class="muted">Processing…</p>';
+  catch (e){ render({detail: "Invalid JSON: " + e.message}); return; }
+  lastClaimed = payload && typeof payload.claimed_amount === "number" ? payload.claimed_amount : null;
+
+  setBusy("submit-json", "sj-label", "sj-arrow", true, "Processing…");
+  showLoading("Adjudicating the claim against the policy…");
   try {
-    const res = await fetch("/claims", {
-      method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload)
-    });
+    const res = await fetch("/claims", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
     render(await res.json());
   } catch (e) { render({detail: e.message}); }
+  finally { setBusy("submit-json", "sj-label", "sj-arrow", false); }
 });
 
 loadSamples();
