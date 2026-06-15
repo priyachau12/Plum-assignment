@@ -1,8 +1,8 @@
-"""Diagnosis matcher.
+"""Diagnosis normalization.
 
 Purpose
 -------
-Match a free-text diagnosis/treatment (e.g. "Type 2 Diabetes Mellitus", "Morbid
+Map a free-text diagnosis/treatment (e.g. "Type 2 Diabetes Mellitus", "Morbid
 Obesity — BMI 37 / Bariatric Consultation") to the policy's controlled
 vocabulary: a `waiting_periods.specific_conditions` key and/or an
 `exclusions.conditions` phrase. The decision rules then reason over those keys.
@@ -17,7 +17,7 @@ the keyword table resolves everything, so the eval is deterministic.
 
 Interactions
 ------------
-- Called by the `translate_diagnosis` node.
+- Called by the `normalize_diagnosis` node.
 - Reads diagnosis/treatment text from the claim content (inline or AI-read).
 - Returns a `DiagnosisMatch` (defined in models/decision.py).
 """
@@ -30,7 +30,7 @@ from typing import Any
 from app.models.claim import ClaimRequest
 from app.models.decision import DiagnosisMatch
 from app.models.policy import Policy
-from app.rules.bill_details import get_document_fields
+from app.rules.financials import get_document_fields
 
 
 def _contains_word(text_lower: str, term: str) -> bool:
@@ -66,10 +66,10 @@ _EXCLUSION_KEYWORDS: list[str] = [
 ]
 
 
-def _get_diagnosis_text(request: ClaimRequest, read_fields: dict[str, Any]) -> str:
+def _get_diagnosis_text(request: ClaimRequest, extracted_content: dict[str, Any]) -> str:
     parts: list[str] = []
     for doc in request.documents:
-        fields = get_document_fields(doc, read_fields)
+        fields = get_document_fields(doc, extracted_content)
         for key in ("diagnosis", "treatment"):
             value = fields.get(key)
             if isinstance(value, str):
@@ -96,10 +96,10 @@ def _find_waiting_condition(text_lower: str, policy: Policy) -> str | None:
     return None
 
 
-def match_diagnosis(
-    request: ClaimRequest, read_fields: dict[str, Any], policy: Policy
+def normalize_diagnosis(
+    request: ClaimRequest, extracted_content: dict[str, Any], policy: Policy
 ) -> DiagnosisMatch:
-    text = _get_diagnosis_text(request, read_fields)
+    text = _get_diagnosis_text(request, extracted_content)
     text_lower = text.lower()
     return DiagnosisMatch(
         raw_text=text,

@@ -1,5 +1,6 @@
-"""Document checks — the deterministic early-stop gate.
+"""Document verification — the deterministic early-stop gate.
 
 Pure logic (no LangGraph, no I/O) so it is trivially unit-testable. The
-`check_documents` node is a thin adapter over `document_checks.run_document_checks`.
+`verify_documents` node is a thin adapter over
+`document_verifier.verify_documents`.
 """

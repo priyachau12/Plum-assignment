@@ -8,7 +8,7 @@ content block, so "this document" refers to the attached file.
 
 from __future__ import annotations
 
-TRIAGE_PROMPT = """You are triaging a medical document attached to an insurance claim.
+CLASSIFICATION_PROMPT = """You are triaging a medical document attached to an insurance claim.
 Look at the attached document image/PDF (if no document is attached, use the file
 name as your only clue) and return ONLY a JSON object, no prose:
 

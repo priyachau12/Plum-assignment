@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 from app.models.decision import Decision, DiagnosisMatch, RejectionReason
-from app.rules.bill_details import gather_bill_details
-from app.rules.decision_rules import apply_rules
-from app.rules.diagnosis_matcher import match_diagnosis
+from app.rules.engine import adjudicate
+from app.rules.financials import gather_bill_details
+from app.rules.normalization import normalize_diagnosis
 from tests.helpers import claim_request
 
 
 def _decide(case_id: str, policy, degraded: bool = False):
     request = claim_request(case_id)
     member = policy.get_member(request.member_id)
-    diagnosis = match_diagnosis(request, {}, policy)
+    diagnosis = normalize_diagnosis(request, {}, policy)
     bill = gather_bill_details(request, policy, {})
-    return apply_rules(request, member, diagnosis, policy, bill, {}, degraded)
+    return adjudicate(request, member, diagnosis, policy, bill, {}, degraded)
 
 
 def test_copay_only_no_network(policy):
@@ -57,6 +57,6 @@ def test_degraded_lowers_confidence(policy):
 def test_unknown_member_not_eligible(policy):
     request = claim_request("TC004")
     bill = gather_bill_details(request, policy, {})
-    r = apply_rules(request, None, DiagnosisMatch(), policy, bill, {}, False)
+    r = adjudicate(request, None, DiagnosisMatch(), policy, bill, {}, False)
     assert r.decision is Decision.REJECTED
     assert RejectionReason.NOT_ELIGIBLE in r.rejection_reasons

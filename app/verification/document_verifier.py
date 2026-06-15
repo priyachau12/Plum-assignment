@@ -1,4 +1,4 @@
-"""Document checks — the deterministic early-stop gate.
+"""Document verification — the deterministic early-stop gate.
 
 Purpose
 -------
@@ -20,8 +20,8 @@ or the conflicting patient names — never a generic error.
 Interactions
 ------------
 - Input: a validated `ClaimRequest` + the loaded `Policy`.
-- Output: a `DocumentCheckResult` (passed flag, blocking issues, trace entries).
-- Called by `app/graph/nodes/check_documents.py`.
+- Output: a `DocumentVerificationResult` (passed flag, blocking issues, trace).
+- Called by `app/graph/nodes/verify_documents.py`.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from app.models.decision import BlockingIssue, BlockingReason, TraceEntry, Trace
 from app.models.policy import Policy
 
 
-class DocumentCheckResult(BaseModel):
+class DocumentVerificationResult(BaseModel):
     """Outcome of running every document check over one claim."""
 
     passed: bool
@@ -54,7 +54,7 @@ def _check_required_documents_present(
     requirement = policy.document_requirement(request.claim_category.value)
     if requirement is None:
         return [], TraceEntry(
-            step="check.required_documents",
+            step="verify.required_documents",
             status=TraceStatus.OK,
             detail=f"No document requirements configured for {request.claim_category.value}.",
         )
@@ -81,14 +81,14 @@ def _check_required_documents_present(
             },
         )
         return [issue], TraceEntry(
-            step="check.required_documents",
+            step="verify.required_documents",
             status=TraceStatus.BLOCKED,
             detail=message,
             data={"missing": missing, "uploaded": uploaded_types},
         )
 
     return [], TraceEntry(
-        step="check.required_documents",
+        step="verify.required_documents",
         status=TraceStatus.OK,
         detail=f"All required documents present for {request.claim_category.value}: "
         f"{', '.join(requirement.required)}.",
@@ -96,7 +96,7 @@ def _check_required_documents_present(
     )
 
 
-def _check_documents_readable(request: ClaimRequest) -> tuple[list[BlockingIssue], TraceEntry]:
+def _check_readable(request: ClaimRequest) -> tuple[list[BlockingIssue], TraceEntry]:
     """TC002: any UNREADABLE document blocks the claim with a re-upload ask
     (NOT a rejection)."""
     unreadable: list[Document] = [
@@ -120,14 +120,14 @@ def _check_documents_readable(request: ClaimRequest) -> tuple[list[BlockingIssue
                 )
             )
         return issues, TraceEntry(
-            step="check.readability",
+            step="verify.readability",
             status=TraceStatus.BLOCKED,
             detail=f"{len(unreadable)} document(s) are unreadable and must be re-uploaded.",
             data={"unreadable_file_ids": [d.file_id for d in unreadable]},
         )
 
     return [], TraceEntry(
-        step="check.readability",
+        step="verify.readability",
         status=TraceStatus.OK,
         detail="All documents are readable.",
     )
@@ -157,7 +157,7 @@ def _check_same_patient(request: ClaimRequest) -> tuple[list[BlockingIssue], Tra
             details={"names_found": {doc.type_label(): name for doc, name in named}},
         )
         return [issue], TraceEntry(
-            step="check.same_patient",
+            step="verify.patient_consistency",
             status=TraceStatus.BLOCKED,
             detail=message,
             data={"distinct_names": sorted(distinct)},
@@ -169,17 +169,17 @@ def _check_same_patient(request: ClaimRequest) -> tuple[list[BlockingIssue], Tra
         if only is not None
         else "No patient names were present on the documents to compare."
     )
-    return [], TraceEntry(step="check.same_patient", status=TraceStatus.OK, detail=detail)
+    return [], TraceEntry(step="verify.patient_consistency", status=TraceStatus.OK, detail=detail)
 
 
-def run_document_checks(request: ClaimRequest, policy: Policy) -> DocumentCheckResult:
+def verify_documents(request: ClaimRequest, policy: Policy) -> DocumentVerificationResult:
     """Run all document checks and aggregate their problems + trace entries."""
     required_issues, required_trace = _check_required_documents_present(request, policy)
-    readable_issues, readable_trace = _check_documents_readable(request)
+    readable_issues, readable_trace = _check_readable(request)
     patient_issues, patient_trace = _check_same_patient(request)
 
     blocking_issues = required_issues + readable_issues + patient_issues
-    return DocumentCheckResult(
+    return DocumentVerificationResult(
         passed=not blocking_issues,
         blocking_issues=blocking_issues,
         trace_entries=[required_trace, readable_trace, patient_trace],

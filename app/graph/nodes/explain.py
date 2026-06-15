@@ -1,11 +1,11 @@
-"""write_explanation node (AI-allowed) — turns the decision into member-facing text.
+"""explain node (AI-allowed) — turns the decision into member-facing text.
 
 Always builds a deterministic, factual explanation from the decision. If the AI
 is configured, it may rephrase it more naturally — but never changes the numbers
 or the decision, and falls back to the built text on any failure.
 
 - Bound to the (optional) `llm` client in `graph/builder.py`.
-- Reads `decision_details`; writes `explanation` + trace.
+- Reads `adjudication_result`; writes `explanation` + trace.
 """
 
 from __future__ import annotations
@@ -50,13 +50,13 @@ def _build_explanation_text(result: DecisionResult) -> str:
     return ("Your claim has been routed to MANUAL REVIEW. " + " ".join(result.notes)).strip()
 
 
-def write_explanation(state: ClaimState, *, llm: LLMClient | None) -> dict:
-    result = state.get("decision_details")
+def explain(state: ClaimState, *, llm: LLMClient | None) -> dict:
+    result = state.get("adjudication_result")
     if result is None:
         return {
             "trace": [
                 TraceEntry(
-                    step="write_explanation",
+                    step="explain",
                     status=TraceStatus.SKIPPED,
                     detail="No decision to explain.",
                 )
@@ -68,7 +68,7 @@ def write_explanation(state: ClaimState, *, llm: LLMClient | None) -> dict:
 
     if llm is not None:
         try:
-            text = llm.write_explanation(
+            text = llm.generate_explanation(
                 decision=result.decision.value,
                 approved_amount=result.approved_amount,
                 reasons=[r.value for r in result.rejection_reasons],
@@ -76,13 +76,13 @@ def write_explanation(state: ClaimState, *, llm: LLMClient | None) -> dict:
             )
             source = "llm"
         except LLMError as exc:
-            logger.warning("write_explanation: AI failed, using built text: %s", exc)
+            logger.warning("explain: AI failed, using built text: %s", exc)
 
     return {
         "explanation": text,
         "trace": [
             TraceEntry(
-                step="write_explanation",
+                step="explain",
                 status=TraceStatus.OK,
                 detail=f"Generated member-facing explanation ({source}).",
                 data={"source": source},

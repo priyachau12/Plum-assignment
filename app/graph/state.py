@@ -6,13 +6,13 @@ key is optional (state fills in as it goes). `trace` and `blocking_issues` use
 concatenates them.
 
 Field ownership:
-    find_member         -> member
-    label_documents     -> document_types
-    check_documents     -> blocking_issues, status (BLOCKED)
-    read_documents      -> read_fields, degraded
-    translate_diagnosis -> diagnosis_match
-    decide_claim        -> decision_details, status (DECIDED)
-    write_explanation   -> explanation
+    intake              -> member
+    classify            -> classified_docs
+    verify_documents    -> blocking_issues, status (BLOCKED)
+    extract             -> extracted_content, degraded
+    normalize_diagnosis -> normalized_diagnosis
+    adjudicate          -> adjudication_result, status (DECIDED)
+    explain             -> explanation
 """
 
 from __future__ import annotations
@@ -40,9 +40,9 @@ class ClaimState(TypedDict, total=False):
     blocking_issues: Annotated[list[BlockingIssue], operator.add]
 
     # Working fields filled in as the claim moves down the line.
-    document_types: dict[str, str]
-    read_fields: dict[str, Any]
-    diagnosis_match: DiagnosisMatch
+    classified_docs: dict[str, str]
+    extracted_content: dict[str, Any]
+    normalized_diagnosis: DiagnosisMatch
     degraded: bool
-    decision_details: DecisionResult
+    adjudication_result: DecisionResult
     explanation: str

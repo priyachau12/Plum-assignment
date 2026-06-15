@@ -9,12 +9,12 @@ is enabled and configured, else `None` (offline/deterministic).
 
 The three tasks
 ---------------
-- `triage_document`  : classify the document type, judge readability, and read
-                       the patient name — the cheap pass that feeds the early
-                       document-verification gate (so a bad-document claim stops
-                       BEFORE the expensive full extraction runs).
-- `read_document_fields` : full structured extraction from the document.
-- `write_explanation`    : member-facing rephrasing of the decision.
+- `classify_document`  : classify the document type, judge readability, and read
+                         the patient name — the cheap pass that feeds the early
+                         document-verification gate (so a bad-document claim stops
+                         BEFORE the expensive full extraction runs).
+- `extract_document`   : full structured extraction from the document.
+- `generate_explanation` : member-facing rephrasing of the decision.
 
 Why an interface
 ----------------
@@ -50,7 +50,7 @@ from pydantic import BaseModel
 
 from app.config import Settings
 from app.exceptions import ClaimsSystemError
-from app.llm.prompts import EXPLANATION_PROMPT, EXTRACTION_PROMPT, TRIAGE_PROMPT
+from app.llm.prompts import CLASSIFICATION_PROMPT, EXPLANATION_PROMPT, EXTRACTION_PROMPT
 from app.models.claim import Document
 
 logger = logging.getLogger(__name__)
@@ -62,13 +62,13 @@ class LLMError(ClaimsSystemError):
     """Any failure calling or parsing an LLM response."""
 
 
-class DocumentTriage(BaseModel):
-    """Lightweight, validated result of the classification/triage pass.
+class DocumentClassification(BaseModel):
+    """Lightweight, validated result of the classification pass.
 
-    `document_type` is the model's free-text guess; `label_documents` maps it
-    onto the `DocumentType` vocabulary (an unmappable guess is treated as
-    unidentified). `readable` drives the unreadable-document gate; `patient_name`
-    feeds the same-patient gate.
+    `document_type` is the model's free-text guess; `classify` maps it onto the
+    `DocumentType` vocabulary (an unmappable guess is treated as unidentified).
+    `readable` drives the unreadable-document gate; `patient_name` feeds the
+    same-patient gate.
     """
 
     document_type: str | None = None
@@ -80,13 +80,13 @@ class LLMClient(ABC):
     """The three LLM tasks the system is allowed to use."""
 
     @abstractmethod
-    def triage_document(self, document: Document) -> DocumentTriage: ...
+    def classify_document(self, document: Document) -> DocumentClassification: ...
 
     @abstractmethod
-    def read_document_fields(self, document: Document) -> dict[str, Any]: ...
+    def extract_document(self, document: Document) -> dict[str, Any]: ...
 
     @abstractmethod
-    def write_explanation(
+    def generate_explanation(
         self, decision: str, approved_amount: float, reasons: list[str], fallback: str
     ) -> str: ...
 
@@ -170,24 +170,24 @@ class AnthropicLLMClient(LLMClient):
 
     # --- the three tasks -----------------------------------------------------
 
-    def triage_document(self, document: Document) -> DocumentTriage:
+    def classify_document(self, document: Document) -> DocumentClassification:
         raw = self._ask(
             document,
-            TRIAGE_PROMPT.format(file_name=document.file_name or document.file_id),
+            CLASSIFICATION_PROMPT.format(file_name=document.file_name or document.file_id),
             max_tokens=256,
         )
-        data = self._parse_json_object(raw, "triage")
+        data = self._parse_json_object(raw, "classification")
         raw_readable = data.get("readable", True)
         readable = (
             raw_readable if isinstance(raw_readable, bool) else str(raw_readable).lower() != "false"
         )
-        return DocumentTriage(
+        return DocumentClassification(
             document_type=(data.get("document_type") or None),
             readable=readable,
             patient_name=(data.get("patient_name") or None),
         )
 
-    def read_document_fields(self, document: Document) -> dict[str, Any]:
+    def extract_document(self, document: Document) -> dict[str, Any]:
         raw = self._ask(
             document,
             EXTRACTION_PROMPT.format(
@@ -197,7 +197,7 @@ class AnthropicLLMClient(LLMClient):
         )
         return self._parse_json_object(raw, "extraction")
 
-    def write_explanation(
+    def generate_explanation(
         self, decision: str, approved_amount: float, reasons: list[str], fallback: str
     ) -> str:
         try:

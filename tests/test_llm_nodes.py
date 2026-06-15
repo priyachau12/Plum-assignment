@@ -1,6 +1,6 @@
 """Tests for the AI-using steps, with a FAKE client (no network).
 
-Proves the AI seam works: reading uses validated model output, falls back /
+Proves the AI seam works: extraction uses validated model output, falls back /
 degrades on failure, and explanation prefers the AI but keeps the built text
 when the model fails.
 """
@@ -11,10 +11,10 @@ from typing import Any
 
 import pytest
 
-from app.graph.nodes.label_documents import label_documents
-from app.graph.nodes.read_documents import read_documents
-from app.graph.nodes.write_explanation import write_explanation
-from app.llm.client import DocumentTriage, LLMClient, LLMError
+from app.graph.nodes.classify import classify
+from app.graph.nodes.explain import explain
+from app.graph.nodes.extract import extract
+from app.llm.client import DocumentClassification, LLMClient, LLMError
 from app.models.claim import ClaimRequest, Document, DocumentQuality, DocumentType
 from app.models.decision import Decision, DecisionResult, TraceStatus
 
@@ -25,26 +25,26 @@ class FakeLLM(LLMClient):
         fields: dict | None = None,
         explanation: str = "AI TEXT",
         fail: bool = False,
-        triage: DocumentTriage | None = None,
+        classification: DocumentClassification | None = None,
     ):
         self._fields = fields or {"diagnosis": "Viral Fever"}
         self._explanation = explanation
         self._fail = fail
-        self._triage = triage or DocumentTriage(
+        self._classification = classification or DocumentClassification(
             document_type="PRESCRIPTION", readable=True, patient_name="Rajesh Kumar"
         )
 
-    def triage_document(self, document: Document) -> DocumentTriage:
+    def classify_document(self, document: Document) -> DocumentClassification:
         if self._fail:
-            raise LLMError("simulated triage failure")
-        return self._triage
+            raise LLMError("simulated classification failure")
+        return self._classification
 
-    def read_document_fields(self, document: Document) -> dict[str, Any]:
+    def extract_document(self, document: Document) -> dict[str, Any]:
         if self._fail:
-            raise LLMError("simulated reading failure")
+            raise LLMError("simulated extraction failure")
         return self._fields
 
-    def write_explanation(self, decision, approved_amount, reasons, fallback) -> str:
+    def generate_explanation(self, decision, approved_amount, reasons, fallback) -> str:
         if self._fail:
             raise LLMError("simulated explanation failure")
         return self._explanation
@@ -61,22 +61,22 @@ def _request_without_content() -> ClaimRequest:
     )
 
 
-def test_read_documents_uses_validated_ai_output():
-    out = read_documents(
+def test_extract_uses_validated_ai_output():
+    out = extract(
         {"request": _request_without_content()}, llm=FakeLLM(fields={"diagnosis": "Dengue"})
     )
-    assert out["read_fields"]["F1"]["diagnosis"] == "Dengue"
+    assert out["extracted_content"]["F1"]["diagnosis"] == "Dengue"
     assert not out.get("degraded")
 
 
-def test_read_documents_degrades_on_ai_error():
-    out = read_documents({"request": _request_without_content()}, llm=FakeLLM(fail=True))
+def test_extract_degrades_on_ai_error():
+    out = extract({"request": _request_without_content()}, llm=FakeLLM(fail=True))
     assert out["degraded"] is True
     assert any(t.status == TraceStatus.FAILED for t in out["trace"])
 
 
-def test_read_documents_degrades_without_ai():
-    out = read_documents({"request": _request_without_content()}, llm=None)
+def test_extract_degrades_without_ai():
+    out = extract({"request": _request_without_content()}, llm=None)
     assert out["degraded"] is True
     assert any(t.status == TraceStatus.SKIPPED for t in out["trace"])
 
@@ -98,15 +98,15 @@ def approved_result() -> DecisionResult:
     )
 
 
-def test_write_explanation_prefers_ai(approved_result):
-    out = write_explanation(
-        {"decision_details": approved_result}, llm=FakeLLM(explanation="Friendly text")
+def test_explain_prefers_ai(approved_result):
+    out = explain(
+        {"adjudication_result": approved_result}, llm=FakeLLM(explanation="Friendly text")
     )
     assert out["explanation"] == "Friendly text"
 
 
-def test_write_explanation_falls_back_to_built_text_on_failure(approved_result):
-    out = write_explanation({"decision_details": approved_result}, llm=FakeLLM(fail=True))
+def test_explain_falls_back_to_built_text_on_failure(approved_result):
+    out = explain({"adjudication_result": approved_result}, llm=FakeLLM(fail=True))
     assert "1350" in out["explanation"]  # deterministic built text still works
 
 
@@ -128,28 +128,30 @@ def _uploaded_doc() -> ClaimRequest:
     )
 
 
-def test_label_documents_classifies_upload_with_vision():
+def test_classify_classifies_upload_with_vision():
     req = _uploaded_doc()
-    triage = DocumentTriage(document_type="HOSPITAL_BILL", readable=True, patient_name="Asha Rao")
-    out = label_documents({"request": req}, llm=FakeLLM(triage=triage))
+    classification = DocumentClassification(
+        document_type="HOSPITAL_BILL", readable=True, patient_name="Asha Rao"
+    )
+    out = classify({"request": req}, llm=FakeLLM(classification=classification))
 
     # The vision findings are resolved onto the document so the gate can use them.
     doc = req.documents[0]
     assert doc.actual_type is DocumentType.HOSPITAL_BILL
     assert doc.patient_name_on_doc == "Asha Rao"
-    assert out["document_types"]["F1"] == "HOSPITAL_BILL"
+    assert out["classified_docs"]["F1"] == "HOSPITAL_BILL"
     assert any(t.status == TraceStatus.OK for t in out["trace"])
 
 
-def test_label_documents_marks_unreadable_upload():
+def test_classify_marks_unreadable_upload():
     req = _uploaded_doc()
-    triage = DocumentTriage(document_type="PHARMACY_BILL", readable=False)
-    label_documents({"request": req}, llm=FakeLLM(triage=triage))
+    classification = DocumentClassification(document_type="PHARMACY_BILL", readable=False)
+    classify({"request": req}, llm=FakeLLM(classification=classification))
     assert req.documents[0].quality is DocumentQuality.UNREADABLE
 
 
-def test_label_documents_skips_when_no_ai_and_no_declared_type():
+def test_classify_skips_when_no_ai_and_no_declared_type():
     req = _uploaded_doc()
-    out = label_documents({"request": req}, llm=None)
+    out = classify({"request": req}, llm=None)
     assert req.documents[0].actual_type is None
     assert any(t.status == TraceStatus.SKIPPED for t in out["trace"])

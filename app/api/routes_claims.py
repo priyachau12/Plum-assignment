@@ -69,7 +69,7 @@ def _run_pipeline(claim: ClaimRequest, request: Request) -> ClaimProcessingResul
             trace=trace,
         )
 
-    result = final_state["decision_details"]
+    result = final_state["adjudication_result"]
     return ClaimProcessingResult(
         claim_id=claim_id,
         status=ProcessingStatus.DECIDED,

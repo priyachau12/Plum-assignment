@@ -1,8 +1,8 @@
-"""read_documents node (AI-allowed) + graceful degradation (TC011).
+"""extract node (AI-allowed) + graceful degradation (TC011).
 
 Gets structured fields for each document. If a document already carries inline
 content (the test cases do), use it — no AI. Otherwise, if the AI is configured,
-read the fields via the model and validate them. If neither is possible, mark
+extract the fields via the model and validate them. If neither is possible, mark
 the claim degraded and continue.
 
 Failure handling
@@ -12,7 +12,7 @@ Failure handling
 - AI error on a real document: trace FAILED, set `degraded`, continue.
 
 - Bound to the (optional) `llm` client in `graph/builder.py`.
-- Writes `read_fields` (file_id -> fields) and/or `degraded` + trace.
+- Writes `extracted_content` (file_id -> fields) and/or `degraded` + trace.
 """
 
 from __future__ import annotations
@@ -27,19 +27,19 @@ from app.models.decision import TraceEntry, TraceStatus
 logger = logging.getLogger(__name__)
 
 
-def read_documents(state: ClaimState, *, llm: LLMClient | None) -> dict:
+def extract(state: ClaimState, *, llm: LLMClient | None) -> dict:
     request = state["request"]
 
     # TC011: a component fails mid-pipeline. We degrade, we do not crash.
     if request.simulate_component_failure:
-        logger.warning("read_documents: simulated component failure")
+        logger.warning("extract: simulated component failure")
         return {
             "degraded": True,
             "trace": [
                 TraceEntry(
-                    step="read_documents",
+                    step="extract",
                     status=TraceStatus.FAILED,
-                    detail="Simulated component failure: reading skipped. "
+                    detail="Simulated component failure: extraction skipped. "
                     "Continuing with available data; confidence reduced.",
                     data={"degraded": True},
                 )
@@ -47,14 +47,14 @@ def read_documents(state: ClaimState, *, llm: LLMClient | None) -> dict:
         }
 
     entries: list[TraceEntry] = []
-    read_fields: dict[str, dict[str, Any]] = {}
+    extracted_content: dict[str, dict[str, Any]] = {}
     degraded = False
 
     for doc in request.documents:
         if doc.content:
             entries.append(
                 TraceEntry(
-                    step="read_documents",
+                    step="extract",
                     status=TraceStatus.OK,
                     detail=f"{doc.file_id}: used caller-provided structured content.",
                     data={"file_id": doc.file_id, "source": "provided"},
@@ -62,12 +62,12 @@ def read_documents(state: ClaimState, *, llm: LLMClient | None) -> dict:
             )
         elif llm is not None:  # real-document path
             try:
-                read_fields[doc.file_id] = llm.read_document_fields(doc)
+                extracted_content[doc.file_id] = llm.extract_document(doc)
                 entries.append(
                     TraceEntry(
-                        step="read_documents",
+                        step="extract",
                         status=TraceStatus.OK,
-                        detail=f"{doc.file_id}: fields read by the AI.",
+                        detail=f"{doc.file_id}: fields extracted by the AI.",
                         data={"file_id": doc.file_id, "source": "llm"},
                     )
                 )
@@ -75,9 +75,9 @@ def read_documents(state: ClaimState, *, llm: LLMClient | None) -> dict:
                 degraded = True
                 entries.append(
                     TraceEntry(
-                        step="read_documents",
+                        step="extract",
                         status=TraceStatus.FAILED,
-                        detail=f"{doc.file_id}: AI reading failed: {exc}",
+                        detail=f"{doc.file_id}: AI extraction failed: {exc}",
                         data={"file_id": doc.file_id},
                     )
                 )
@@ -85,7 +85,7 @@ def read_documents(state: ClaimState, *, llm: LLMClient | None) -> dict:
             degraded = True
             entries.append(
                 TraceEntry(
-                    step="read_documents",
+                    step="extract",
                     status=TraceStatus.SKIPPED,
                     detail=f"{doc.file_id}: no content and no AI configured; fields unavailable.",
                     data={"file_id": doc.file_id},
@@ -93,8 +93,8 @@ def read_documents(state: ClaimState, *, llm: LLMClient | None) -> dict:
             )
 
     update: dict = {"trace": entries}
-    if read_fields:
-        update["read_fields"] = read_fields
+    if extracted_content:
+        update["extracted_content"] = extracted_content
     if degraded:
         update["degraded"] = True
     return update
