@@ -9,7 +9,7 @@ decision with a **full step-by-step trace**.
 > deterministic). See [`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md).
 
 This is my submission for the Plum AI Engineer assignment. The full problem
-statement is in [`assignment.md`](assignment.md).
+statement is in [`assignment.md`](assignment.md). Maintained by Priya Chau.
 
 ---
 
