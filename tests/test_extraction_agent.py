@@ -87,6 +87,10 @@ def test_gives_up_when_all_reads_stay_weak():
     assert len(llm.calls) == 3  # exhausted the budget
     assert result.fields == WEAK  # best-so-far partial data is still returned
     assert result.confidence == round(1 / 3, 2)
+    # Retries under sustained weakness still escalate to the strong model + hint.
+    assert llm.calls[0]["model"] == FAST
+    assert [c["model"] for c in llm.calls[1:]] == [STRONG, STRONG]
+    assert all(c["prompt_hint"] for c in llm.calls[1:])
 
 
 def test_recovers_after_a_failed_attempt():
@@ -116,6 +120,25 @@ def test_disabled_does_single_strong_shot():
     assert llm.calls[0]["model"] == STRONG
     assert llm.calls[0]["prompt_hint"] is None
     assert result.gave_up is True  # single weak shot still degrades
+
+
+def test_disabled_converges_on_strong_shot():
+    # Disabled + a complete read: one strong-model call, converges, not degraded.
+    llm = ScriptedLLM([FULL])
+    result = ExtractionAgent(llm, _config(enabled=False)).run(_doc())
+    assert len(llm.calls) == 1
+    assert llm.calls[0]["model"] == STRONG
+    assert result.gave_up is False
+    assert result.confidence == 1.0
+
+
+def test_single_attempt_enabled_uses_strong_model():
+    # max_attempts=1 with the agent enabled: the lone shot uses the strong model
+    # (no point spending the cheap tier when escalation is impossible).
+    llm = ScriptedLLM([FULL])
+    ExtractionAgent(llm, _config(max_attempts=1)).run(_doc())
+    assert len(llm.calls) == 1
+    assert llm.calls[0]["model"] == STRONG
 
 
 def test_from_settings_maps_tiers():

@@ -14,7 +14,9 @@ def test_defaults_are_sane():
 
 
 def test_extraction_agent_defaults():
-    s = Settings()
+    # _env_file=None so this asserts the CODE defaults, not whatever a local .env
+    # happens to set.
+    s = Settings(_env_file=None)
     assert s.extraction_agent_enabled is True
     assert s.extraction_confidence_threshold == 0.67
     assert s.extraction_max_attempts == 3

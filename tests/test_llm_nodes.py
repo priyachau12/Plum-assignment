@@ -169,6 +169,40 @@ def test_explain_guards_against_amount_drift(approved_result):
     assert out["trace"][0].data["source"] == "template-guarded"
 
 
+def test_explain_guard_rejects_substring_only_match():
+    # Approved 350; AI says "Rs. 1,350" — '350' is a substring of '1350' but the
+    # numbers are different, so the guard must reject (no false-accept).
+    res = DecisionResult(
+        decision=Decision.APPROVED,
+        approved_amount=350.0,
+        confidence=0.95,
+        financial_breakdown={"is_network": False, "copay_percent": 0},
+    )
+    out = explain(
+        {"adjudication_result": res},
+        llm=FakeLLM(explanation="Your claim of Rs. 1,350 has been approved."),
+    )
+    assert out["trace"][0].data["source"] == "template-guarded"
+    assert "350" in out["explanation"]
+
+
+def test_explain_guard_accepts_decimal_amount():
+    # Approved 899.5; AI says "Rs. 899.50" — must be accepted (integer rounding
+    # of the target would wrongly look for '900').
+    res = DecisionResult(
+        decision=Decision.APPROVED,
+        approved_amount=899.5,
+        confidence=0.95,
+        financial_breakdown={"is_network": False, "copay_percent": 0},
+    )
+    out = explain(
+        {"adjudication_result": res},
+        llm=FakeLLM(explanation="Good news — Rs. 899.50 is approved."),
+    )
+    assert out["explanation"] == "Good news — Rs. 899.50 is approved."
+    assert out["trace"][0].data["source"] == "llm"
+
+
 def test_explain_guard_does_not_trigger_on_rejection():
     rejected = DecisionResult(
         decision=Decision.REJECTED,

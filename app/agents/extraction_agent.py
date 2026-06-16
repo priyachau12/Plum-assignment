@@ -127,9 +127,12 @@ class ExtractionAgent:
         best_completeness = -1.0
 
         for i in range(max_attempts):
-            # Tiering: cheap model first, strong model on every retry. When the
-            # agent is disabled the single attempt uses the strong model.
-            model = cfg.model_strong if (not cfg.enabled or i > 0) else cfg.model_fast
+            # Tiering: cheap model only on the first try AND only when a retry is
+            # actually possible (enabled, multi-attempt). A disabled or
+            # single-attempt run uses the strong model directly — a lone cheap
+            # shot with no chance to escalate would be strictly worse.
+            use_fast = cfg.enabled and i == 0 and max_attempts > 1
+            model = cfg.model_fast if use_fast else cfg.model_strong
             prompt_hint = None
             if i > 0:
                 missing = _missing_buckets(best_fields) or ["key fields"]

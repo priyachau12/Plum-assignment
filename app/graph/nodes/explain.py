@@ -11,6 +11,7 @@ or the decision, and falls back to the built text on any failure.
 from __future__ import annotations
 
 import logging
+import re
 
 from app.graph.state import ClaimState
 from app.llm.client import LLMClient, LLMError
@@ -57,11 +58,22 @@ def _is_consistent_with_decision(text: str, result: DecisionResult) -> bool:
     """Guard against an LLM explanation that drifts from the decision. For a
     payout (APPROVED/PARTIAL) the approved amount must actually appear in the
     text; if it doesn't, we don't trust the rephrasing. Non-payout decisions
-    (amount 0) are not amount-checked, so the guard never false-triggers on them."""
-    if result.decision in (Decision.APPROVED, Decision.PARTIAL):
-        amount = f"{result.approved_amount:.0f}"
-        return amount in text.replace(",", "")
-    return True
+    (amount 0) are not amount-checked, so the guard never false-triggers on them.
+
+    Numbers are parsed and compared numerically — not as substrings — so '1,350'
+    matches 1350.0, a decimal payout (e.g. 899.50) isn't lost to integer
+    rounding, and an approved 350 does NOT spuriously match an AI-quoted '1,350'.
+    """
+    if result.decision not in (Decision.APPROVED, Decision.PARTIAL):
+        return True
+    target = round(result.approved_amount, 2)
+    for token in re.findall(r"\d[\d,]*(?:\.\d+)?", text):
+        try:
+            if abs(float(token.replace(",", "")) - target) < 0.01:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def explain(state: ClaimState, *, llm: LLMClient | None) -> dict:
