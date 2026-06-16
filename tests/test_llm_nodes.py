@@ -11,12 +11,26 @@ from typing import Any
 
 import pytest
 
+from app.agents.extraction_agent import ExtractionAgent, ExtractionAgentConfig
 from app.graph.nodes.classify import classify
 from app.graph.nodes.explain import explain
 from app.graph.nodes.extract import extract
 from app.llm.client import DocumentClassification, LLMClient, LLMError
 from app.models.claim import ClaimRequest, Document, DocumentQuality, DocumentType
 from app.models.decision import Decision, DecisionResult, TraceStatus
+
+
+def _agent(llm, **cfg) -> ExtractionAgent:
+    """Wrap a fake client in an ExtractionAgent for extract-node tests."""
+    base = dict(
+        enabled=True,
+        confidence_threshold=0.67,
+        max_attempts=3,
+        model_fast="fast",
+        model_strong="strong",
+    )
+    base.update(cfg)
+    return ExtractionAgent(llm, ExtractionAgentConfig(**base))
 
 
 class FakeLLM(LLMClient):
@@ -33,13 +47,17 @@ class FakeLLM(LLMClient):
         self._classification = classification or DocumentClassification(
             document_type="PRESCRIPTION", readable=True, patient_name="Rajesh Kumar"
         )
+        self.extract_calls: list[dict] = []  # records (model, prompt_hint) per call
 
     def classify_document(self, document: Document) -> DocumentClassification:
         if self._fail:
             raise LLMError("simulated classification failure")
         return self._classification
 
-    def extract_document(self, document: Document) -> dict[str, Any]:
+    def extract_document(
+        self, document: Document, *, model: str | None = None, prompt_hint: str | None = None
+    ) -> dict[str, Any]:
+        self.extract_calls.append({"model": model, "prompt_hint": prompt_hint})
         if self._fail:
             raise LLMError("simulated extraction failure")
         return self._fields
@@ -61,22 +79,53 @@ def _request_without_content() -> ClaimRequest:
     )
 
 
-def test_extract_uses_validated_ai_output():
-    out = extract(
-        {"request": _request_without_content()}, llm=FakeLLM(fields={"diagnosis": "Dengue"})
+def _request_with_content() -> ClaimRequest:
+    return ClaimRequest(
+        member_id="EMP001",
+        policy_id="PLUM_GHI_2024",
+        claim_category="CONSULTATION",
+        treatment_date="2024-11-01",
+        claimed_amount=1500,
+        documents=[
+            Document(file_id="F1", actual_type="PRESCRIPTION", content={"diagnosis": "Viral Fever"})
+        ],
     )
+
+
+def test_extract_uses_validated_ai_output():
+    full = {"patient_name": "R", "date": "2024-11-01", "diagnosis": "Dengue"}
+    out = extract({"request": _request_without_content()}, agent=_agent(FakeLLM(fields=full)))
     assert out["extracted_content"]["F1"]["diagnosis"] == "Dengue"
     assert not out.get("degraded")
 
 
+def test_extract_inline_content_bypasses_agent():
+    # Determinism guard: a document with inline content must NOT invoke the agent
+    # (this is what keeps the injected-content eval reproducible).
+    llm = FakeLLM(fields={"diagnosis": "SHOULD NOT BE USED"})
+    out = extract({"request": _request_with_content()}, agent=_agent(llm))
+    assert llm.extract_calls == []  # agent.run never reached the LLM
+    assert "extracted_content" not in out  # the provided content is used directly
+    assert not out.get("degraded")
+
+
+def test_extract_simulate_failure_skips_agent():
+    req = _request_without_content()
+    req.simulate_component_failure = True
+    llm = FakeLLM()
+    out = extract({"request": req}, agent=_agent(llm))
+    assert out["degraded"] is True
+    assert llm.extract_calls == []  # short-circuited before the agent ran
+
+
 def test_extract_degrades_on_ai_error():
-    out = extract({"request": _request_without_content()}, llm=FakeLLM(fail=True))
+    out = extract({"request": _request_without_content()}, agent=_agent(FakeLLM(fail=True)))
     assert out["degraded"] is True
     assert any(t.status == TraceStatus.FAILED for t in out["trace"])
 
 
 def test_extract_degrades_without_ai():
-    out = extract({"request": _request_without_content()}, llm=None)
+    out = extract({"request": _request_without_content()}, agent=None)
     assert out["degraded"] is True
     assert any(t.status == TraceStatus.SKIPPED for t in out["trace"])
 
@@ -99,10 +148,71 @@ def approved_result() -> DecisionResult:
 
 
 def test_explain_prefers_ai(approved_result):
+    # Consistent AI text (mentions the approved amount) is used as-is.
     out = explain(
-        {"adjudication_result": approved_result}, llm=FakeLLM(explanation="Friendly text")
+        {"adjudication_result": approved_result},
+        llm=FakeLLM(explanation="Good news — Rs. 1,350 is approved and on its way."),
     )
-    assert out["explanation"] == "Friendly text"
+    assert out["explanation"] == "Good news — Rs. 1,350 is approved and on its way."
+    assert out["trace"][0].data["source"] == "llm"
+
+
+def test_explain_guards_against_amount_drift(approved_result):
+    # AI text that contradicts the approved amount (1350) is rejected; the node
+    # falls back to the deterministic template, which carries the correct number.
+    out = explain(
+        {"adjudication_result": approved_result},
+        llm=FakeLLM(explanation="Your claim is fully approved for Rs. 9,999."),
+    )
+    assert "1350" in out["explanation"]
+    assert "9,999" not in out["explanation"]
+    assert out["trace"][0].data["source"] == "template-guarded"
+
+
+def test_explain_guard_rejects_substring_only_match():
+    # Approved 350; AI says "Rs. 1,350" — '350' is a substring of '1350' but the
+    # numbers are different, so the guard must reject (no false-accept).
+    res = DecisionResult(
+        decision=Decision.APPROVED,
+        approved_amount=350.0,
+        confidence=0.95,
+        financial_breakdown={"is_network": False, "copay_percent": 0},
+    )
+    out = explain(
+        {"adjudication_result": res},
+        llm=FakeLLM(explanation="Your claim of Rs. 1,350 has been approved."),
+    )
+    assert out["trace"][0].data["source"] == "template-guarded"
+    assert "350" in out["explanation"]
+
+
+def test_explain_guard_accepts_decimal_amount():
+    # Approved 899.5; AI says "Rs. 899.50" — must be accepted (integer rounding
+    # of the target would wrongly look for '900').
+    res = DecisionResult(
+        decision=Decision.APPROVED,
+        approved_amount=899.5,
+        confidence=0.95,
+        financial_breakdown={"is_network": False, "copay_percent": 0},
+    )
+    out = explain(
+        {"adjudication_result": res},
+        llm=FakeLLM(explanation="Good news — Rs. 899.50 is approved."),
+    )
+    assert out["explanation"] == "Good news — Rs. 899.50 is approved."
+    assert out["trace"][0].data["source"] == "llm"
+
+
+def test_explain_guard_does_not_trigger_on_rejection():
+    rejected = DecisionResult(
+        decision=Decision.REJECTED,
+        approved_amount=0.0,
+        confidence=0.95,
+    )
+    # No amount to match on a rejection — arbitrary AI text is accepted.
+    out = explain({"adjudication_result": rejected}, llm=FakeLLM(explanation="Sorry, declined."))
+    assert out["explanation"] == "Sorry, declined."
+    assert out["trace"][0].data["source"] == "llm"
 
 
 def test_explain_falls_back_to_built_text_on_failure(approved_result):
@@ -187,12 +297,14 @@ def test_classify_skips_when_no_ai_and_no_declared_type():
 
 def test_extract_full_fields_give_full_confidence():
     full = {"patient_name": "Rajesh Kumar", "date": "2024-11-01", "diagnosis": "Viral Fever"}
-    out = extract({"request": _request_without_content()}, llm=FakeLLM(fields=full))
+    out = extract({"request": _request_without_content()}, agent=_agent(FakeLLM(fields=full)))
     assert out["extraction_confidence"] == 1.0
 
 
 def test_extract_partial_fields_lower_confidence():
-    out = extract({"request": _request_without_content()}, llm=FakeLLM(fields={"diagnosis": "X"}))
+    out = extract(
+        {"request": _request_without_content()}, agent=_agent(FakeLLM(fields={"diagnosis": "X"}))
+    )
     assert out["extraction_confidence"] < 1.0
 
 
@@ -203,7 +315,7 @@ def test_extract_document_validates_and_coerces_llm_json(monkeypatch):
     monkeypatch.setattr(
         client,
         "_ask",
-        lambda doc, prompt, max_tokens=1024: '{"patient_name": "Rajesh", "total": "1500"}',
+        lambda *a, **k: '{"patient_name": "Rajesh", "total": "1500"}',
     )
     fields = client.extract_document(Document(file_id="F1", actual_type="HOSPITAL_BILL"))
     assert fields["patient_name"] == "Rajesh"
@@ -217,7 +329,48 @@ def test_extract_document_raises_on_bad_schema(monkeypatch):
     monkeypatch.setattr(
         client,
         "_ask",
-        lambda doc, prompt, max_tokens=1024: '{"total": "not-a-number"}',
+        lambda doc, prompt, max_tokens=1024, model=None: '{"total": "not-a-number"}',
     )
     with pytest.raises(LLMError):
         client.extract_document(Document(file_id="F1", actual_type="HOSPITAL_BILL"))
+
+
+def test_extract_document_honors_model_override_and_prompt_hint(monkeypatch):
+    from app.llm.client import AnthropicLLMClient
+
+    client = AnthropicLLMClient(model="default-model", api_key="dummy", timeout=1.0)
+    seen: dict = {}
+
+    def fake_ask(doc, prompt, max_tokens=1024, model=None):
+        seen["prompt"] = prompt
+        seen["model"] = model
+        return '{"patient_name": "Asha"}'
+
+    monkeypatch.setattr(client, "_ask", fake_ask)
+    client.extract_document(
+        Document(file_id="F1", actual_type="HOSPITAL_BILL"),
+        model="strong-model",
+        prompt_hint="LOOK AGAIN at the footer.",
+    )
+    assert seen["model"] == "strong-model"  # override reached the API call
+    assert "LOOK AGAIN at the footer." in seen["prompt"]  # hint appended to the prompt
+
+
+def test_create_falls_back_to_default_model_without_override(monkeypatch):
+    from app.llm.client import AnthropicLLMClient
+
+    client = AnthropicLLMClient(model="default-model", api_key="dummy", timeout=1.0)
+    seen: dict = {}
+
+    class _Messages:
+        def create(self, *, model, **kwargs):
+            seen["model"] = model
+
+            class _Resp:
+                content = [type("B", (), {"text": "{}"})()]
+
+            return _Resp()
+
+    monkeypatch.setattr(client, "_client", type("C", (), {"messages": _Messages()})())
+    client._create(max_tokens=10, messages=[])
+    assert seen["model"] == "default-model"  # None override -> client default

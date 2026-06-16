@@ -1,18 +1,21 @@
 """extract node (AI-allowed) + graceful degradation (TC011).
 
 Gets structured fields for each document. If a document already carries inline
-content (the test cases do), use it — no AI. Otherwise, if the AI is configured,
-extract the fields via the model and validate them. If neither is possible, mark
-the claim degraded and continue.
+content (the test cases do), use it — no AI, deterministic. Otherwise, if an
+extraction agent is configured, run its self-correction loop (retry + model
+escalation) and use its best read. If neither is possible, mark the claim
+degraded and continue.
 
 Failure handling
 ----------------
 - `simulate_component_failure` (TC011): record a FAILED trace note, set
   `degraded`, and continue — the pipeline must not crash.
-- AI error on a real document: trace FAILED, set `degraded`, continue.
+- Agent gave up (budget exhausted, still weak, or every call errored): trace the
+  attempts, set `degraded`, keep any best-effort fields, continue.
 
-- Bound to the (optional) `llm` client in `graph/builder.py`.
-- Writes `extracted_content` (file_id -> fields) and/or `degraded` + trace.
+- Bound to the (optional) `ExtractionAgent` in `graph/builder.py`.
+- Writes `extracted_content` (file_id -> fields), `extraction_confidence`,
+  and/or `degraded` + trace.
 """
 
 from __future__ import annotations
@@ -20,15 +23,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.agents.extraction_agent import ExtractionAgent
 from app.graph.state import ClaimState
-from app.llm.client import LLMClient, LLMError
 from app.models.decision import TraceEntry, TraceStatus
-from app.models.extraction import extraction_completeness
 
 logger = logging.getLogger(__name__)
 
 
-def extract(state: ClaimState, *, llm: LLMClient | None) -> dict:
+def extract(state: ClaimState, *, agent: ExtractionAgent | None) -> dict:
     request = state["request"]
 
     # TC011: a component fails mid-pipeline. We degrade, we do not crash.
@@ -50,10 +52,12 @@ def extract(state: ClaimState, *, llm: LLMClient | None) -> dict:
     entries: list[TraceEntry] = []
     extracted_content: dict[str, dict[str, Any]] = {}
     degraded = False
-    confidences: list[float] = []  # per-document extraction-quality on the AI path
+    confidences: list[float] = []  # per-document extraction-quality on the agent path
 
     for doc in request.documents:
         if doc.content:
+            # Deterministic path: caller-provided content. The agent never runs
+            # here, which is what keeps the injected-content eval reproducible.
             entries.append(
                 TraceEntry(
                     step="extract",
@@ -62,33 +66,56 @@ def extract(state: ClaimState, *, llm: LLMClient | None) -> dict:
                     data={"file_id": doc.file_id, "source": "provided"},
                 )
             )
-        elif llm is not None:  # real-document path
-            try:
-                fields = llm.extract_document(doc)
-                extracted_content[doc.file_id] = fields
-                completeness = extraction_completeness(fields)
-                confidences.append(completeness)
+        elif agent is not None:  # real-document path — the self-correction loop
+            result = agent.run(doc)
+            for rec in result.attempts:
                 entries.append(
                     TraceEntry(
                         step="extract",
-                        status=TraceStatus.OK,
-                        detail=f"{doc.file_id}: fields extracted by the AI "
-                        f"(completeness {completeness:.2f}).",
+                        status=TraceStatus.OK if rec.succeeded else TraceStatus.FAILED,
+                        detail=(
+                            f"{doc.file_id}: attempt {rec.attempt} [{rec.model}] {rec.note} "
+                            f"(completeness {rec.completeness:.2f})."
+                        ),
                         data={
                             "file_id": doc.file_id,
-                            "source": "llm",
-                            "completeness": completeness,
+                            "attempt": rec.attempt,
+                            "model": rec.model,
+                            "completeness": rec.completeness,
+                            "source": "agent",
                         },
                     )
                 )
-            except LLMError as exc:
+
+            if result.fields:
+                extracted_content[doc.file_id] = result.fields
+                confidences.append(result.confidence)
+
+            if result.gave_up:
                 degraded = True
                 entries.append(
                     TraceEntry(
                         step="extract",
                         status=TraceStatus.FAILED,
-                        detail=f"{doc.file_id}: AI extraction failed: {exc}",
-                        data={"file_id": doc.file_id},
+                        detail=(
+                            f"{doc.file_id}: extraction did not reach confidence after "
+                            f"{len(result.attempts)} attempt(s); continuing with partial data. "
+                            "A clearer copy of this document is recommended."
+                        ),
+                        data={"file_id": doc.file_id, "gave_up": True},
+                    )
+                )
+            else:
+                entries.append(
+                    TraceEntry(
+                        step="extract",
+                        status=TraceStatus.OK,
+                        detail=(
+                            f"{doc.file_id}: fields extracted by the agent "
+                            f"(completeness {result.confidence:.2f}) in {len(result.attempts)} "
+                            "attempt(s)."
+                        ),
+                        data={"file_id": doc.file_id, "source": "agent"},
                     )
                 )
         else:
@@ -106,7 +133,7 @@ def extract(state: ClaimState, *, llm: LLMClient | None) -> dict:
     if extracted_content:
         update["extracted_content"] = extracted_content
     if confidences:
-        # Average field-extraction quality across AI-read documents; feeds the
+        # Average extraction quality across agent-read documents; feeds the
         # composed confidence score. (Unset on the inject-content path, where the
         # caller-provided content is trusted, so confidence stays at its base.)
         update["extraction_confidence"] = round(sum(confidences) / len(confidences), 2)

@@ -143,6 +143,21 @@ before the engine touches it. Same validated input → same decision, always.
                           policy_terms.json  (read-only base file)
 ```
 
+The same shape as a Mermaid diagram. LLM-assisted nodes are dotted; the trunk is
+deterministic. Note `normalize_diagnosis` is **deterministic** (not an LLM node),
+and `explain` runs *after* `adjudicate` and feeds the response:
+
+```mermaid
+flowchart LR
+    User["Browser UI"] --> FastAPI["FastAPI app"] --> LangGraph["LangGraph pipeline"]
+    LangGraph --> Intake["intake · det"] --> Classify["classify · LLM"] --> VerifyGate["verify_documents · det"]
+    VerifyGate -->|blocked| Response["ClaimProcessingResult"]
+    VerifyGate -->|continue| Extract["extract · LLM"] --> Normalize["normalize_diagnosis · det"] --> RuleEngine["adjudicate · det"] --> Explain["explain · LLM"] --> Response
+    LLM["Claude (vision + text)"] -.-> Classify
+    LLM -.-> Extract
+    LLM -.-> Explain
+```
+
 **Composition root** = `app/main.py`. At startup (`lifespan`) it: configures
 logging, **loads the policy once**, **builds the graph once**, and stashes
 both plus settings on `app.state`. Request handlers never re-load these.
@@ -184,7 +199,7 @@ The seven graph nodes (file names match exactly, one file per node in
 | 1 | `intake` | det | raw request | resolved member, trace initialized | invalid request → 422 before graph |
 | 2 | `classify` | LLM | each document | resolved type / readability / patient on the doc | trust declared `actual_type`; vision error → trace failed |
 | 3 | `verify_documents` | det | docs + types + quality + patient names | pass, or **blocking issues** (+ status BLOCKED) | n/a (pure) |
-| 4 | `extract` | LLM | each document | `extracted_content` + extraction-quality signal | use injected `content`; else Pydantic-validate AI output, degrade on failure |
+| 4 | `extract` | LLM (agent) | each document | `extracted_content` + extraction-quality signal | use injected `content`; else run the self-correction agent (§6.1) — Pydantic-validated, retries + escalates, degrades if it can't converge |
 | 5 | `normalize_diagnosis` | det | free-text diagnosis | canonical policy key (e.g. `diabetes`) | unmapped → no key (coverage still decided by category) |
 | 6 | `adjudicate` | det | claim + policy + normalized data | decision + amount + per-line reasons + confidence | runs on whatever data exists |
 | 7 | `explain` | LLM | the decision | member-facing explanation string | template fallback from the decision |
@@ -195,6 +210,47 @@ issues straight to `END`, otherwise to `extract`. This is what makes TC001–TC0
 stop *before* any decision. The API layer (`routes_claims._run_pipeline`)
 assembles the final `ClaimProcessingResult` from the end state — it is not a
 graph node.
+
+### 6.1 The extraction self-correction agent
+
+`extract` (node 4) is the one place with a genuine **agent** — an autonomous
+plan → act → observe → decide loop (`app/agents/extraction_agent.py`). It exists
+because a single vision read of a hard document (handwriting, stamps, phone
+photos) is exactly where one shot is weakest, and the original behavior accepted
+a weak read as-is. The agent instead tries to recover before degrading:
+
+1. **act** — read the document (cheap baseline model on the first attempt).
+2. **observe** — score the read with `extraction_completeness`.
+3. **decide** — good enough → converge; below threshold and attempts remain →
+   escalate to the strong model with a sharper, field-targeted prompt and retry;
+   budget exhausted → give up, returning the best read so far and flagging it so
+   the node degrades (the existing graceful-degradation path).
+
+```mermaid
+flowchart LR
+    R[read: current-tier model + hint] --> O[score completeness]
+    O --> D{>= threshold?}
+    D -- yes --> C[converge]
+    D -- no --> B{attempts left?}
+    B -- yes --> E[escalate model + sharper prompt] --> R
+    B -- no --> G[give up → degrade]
+```
+
+Three boundaries keep this honest and safe:
+
+- **Perception only.** The agent never decides a claim — it only changes the
+  *quality* of the fields handed to the deterministic engine. Cognition stays
+  reproducible.
+- **Model tiering.** Cheap model first, strong model only on retry — so the
+  common case (clean document) is cheap and the cost lands only on hard reads.
+- **Eval-safe.** The agent is constructed only when an LLM client is present and
+  runs only on the no-`content` path; the 12 injected-content cases never touch
+  it, so the eval stays deterministic. Disabling it (or `max_attempts=1`)
+  reproduces the original single-shot behavior.
+
+This is *agentic*, not *multi-agent*: one self-correcting agent. The loop is kept
+generic so a future `ClassificationAgent` (the same recover-before-degrade idea
+applied to document classification) is a thin reuse.
 
 ---
 
@@ -250,6 +306,57 @@ POST /claims
 No node failure becomes a 500; it becomes a trace entry plus a confidence
 penalty.
 
+### 7.4 Pipeline flow (diagram)
+
+The full request lifecycle. Both entry points (`POST /claims` JSON and
+`POST /claims/upload` multipart) feed the same graph; the blocking fork is the
+only branch:
+
+```mermaid
+flowchart TD
+    A["Claim submission (POST /claims JSON or POST /claims/upload)"] --> B{Valid request?}
+    B -->|No| C["HTTP 422"]
+    B -->|Yes| D["Create ClaimState"]
+    D --> E["intake — member & policy check"]
+    E --> F["classify — document type"]
+    F --> G["verify_documents — required + readable + same patient"]
+    G --> H{Any blocking issue?}
+    H -->|Yes| I["status = BLOCKED"]
+    I --> Z["Response"]
+    H -->|No| J["extract — fields, may set degraded"]
+    J --> K["normalize_diagnosis — free text to policy term"]
+    K --> L["adjudicate — rule engine"]
+    L --> M["explain — member-facing message"]
+    M --> Z
+    Z --> O["decision"]
+    Z --> P["approved_amount"]
+    Z --> Q["confidence"]
+    Z --> R["blocking_issues / explanation / line_items / financial_breakdown / degraded"]
+    Z --> S["trace"]
+```
+
+### 7.5 Early-stop gate (diagram)
+
+The gate is **not** a sequential short-circuit. All three checks run on every
+claim and their problems are **aggregated**, so a claim that is both missing a
+document *and* has a patient mismatch reports **both** in one response. The
+stop/continue fork (`_after_document_verification`) happens once, after
+aggregation:
+
+```mermaid
+flowchart TD
+    A["Claim arrives"] --> B["verify_documents"]
+    B --> C["Check required docs"]
+    B --> F["Check readability"]
+    B --> I["Check patient match"]
+    C --> AGG["Aggregate ALL blocking_issues (every check runs)"]
+    F --> AGG
+    I --> AGG
+    AGG --> D{Any blocking issue?}
+    D -->|Yes| E["status = BLOCKED → END"]
+    D -->|No| L["continue → extract"]
+```
+
 ---
 
 ## 8. The deterministic rule engine
@@ -286,6 +393,41 @@ precedence is therefore the rule order above. Every rule still appends its trace
 entry up to the deciding one, so the trace shows what was checked. (A low final
 confidence on an otherwise-approvable claim also routes to MANUAL_REVIEW — see
 §10.)
+
+The same order as a diagram — first matching rule exits; note Rule 6 (all line
+items excluded) and Rule 8 (high-value auto manual-review) sit between the
+per-claim limit and the annual limit:
+
+```mermaid
+flowchart TD
+    A["Adjudication starts"] --> B["1 · Eligibility"]
+    B -->|Fail| BX["REJECT · NOT_ELIGIBLE"]
+    B -->|Pass| C["1b · Minimum amount"]
+    C -->|Fail| CX["REJECT · BELOW_MINIMUM"]
+    C -->|Pass| D["1c · Submission window"]
+    D -->|Fail| DX["REJECT · SUBMISSION_WINDOW_EXCEEDED"]
+    D -->|Pass| E["2 · Exclusion"]
+    E -->|Excluded| EX["REJECT · EXCLUDED_CONDITION"]
+    E -->|Covered| F["3 · Waiting period"]
+    F -->|Within| FX["REJECT · WAITING_PERIOD"]
+    F -->|Outside| G["4 · Pre-auth"]
+    G -->|Missing| GX["REJECT · PRE_AUTH_MISSING"]
+    G -->|OK| H["5 · Per-claim limit"]
+    H -->|Exceeded| HX["REJECT · PER_CLAIM_EXCEEDED"]
+    H -->|Valid| LI{"6 · All line items excluded?"}
+    LI -->|Yes| LIX["REJECT · EXCLUDED_CONDITION"]
+    LI -->|No| I["7 · Fraud signals"]
+    I -->|Suspicious| IX["MANUAL_REVIEW"]
+    I -->|Safe| HV{"8 · Amount > auto-review threshold?"}
+    HV -->|Yes| HVX["MANUAL_REVIEW"]
+    HV -->|No| J["8b · Annual OPD limit"]
+    J -->|Exhausted| JX["REJECT · ANNUAL_LIMIT_EXCEEDED"]
+    J -->|Available| K["9 · Financial calc · discount → co-pay → caps"]
+    K --> CONF["Confidence calc"]
+    CONF --> M{"Confidence < 0.50?"}
+    M -->|Yes| MX["MANUAL_REVIEW"]
+    M -->|No| N["APPROVED / PARTIAL"]
+```
 
 ---
 
@@ -400,6 +542,29 @@ Concurrency note: `trace` and `blocking_issues` are declared
 its own new entries and LangGraph **concatenates** them rather than overwriting —
 safe even if nodes are parallelized later (risk R8).
 
+As a diagram — every node appends its own entries (several nodes emit more than
+one), and the reducer concatenates them into the single trace returned in the
+response:
+
+```mermaid
+flowchart TD
+    A["intake"] --> B["1–3 entries (intake, intake.lookup, intake.policy_match)"]
+    C["classify"] --> D["1 entry per document"]
+    E["verify_documents"] --> F["3 entries (required / readability / patient)"]
+    G["extract"] --> H["1 entry"]
+    NZ["normalize_diagnosis"] --> NT["1 entry"]
+    AD["adjudicate"] --> J["up to ~13 entries (one per rule)"]
+    K["explain"] --> L["1 entry"]
+    B --> M
+    D --> M
+    F --> M
+    H --> M
+    NT --> M
+    J --> M
+    L --> M["state.trace — Annotated list, operator.add concatenates"]
+    M --> N["Returned in ClaimProcessingResult.trace"]
+```
+
 ---
 
 ## 13. Failure handling & graceful degradation
@@ -508,7 +673,7 @@ one produces a full trace.
 │   ├── verification/document_verifier.py   # the early-stop gate (pure)
 │   ├── llm/                     # client (3 tasks) + prompts
 │   └── static/index.html       # single-page UI
-├── tests/                       # pytest (67 tests)
+├── tests/                       # pytest (83 tests)
 ├── scripts/
 │   ├── run_eval.py              # → docs/EVAL_REPORT.md (deterministic, offline)
 │   ├── make_sample_docs.py      # generate sample document images
@@ -573,7 +738,7 @@ how to extend it:
 | **P6** | Eval report over all 12 test cases | ✅ done — **12/12 match** every `system_must` (`docs/EVAL_REPORT.md`) |
 | **P7** | Live vision demo over generated sample documents | ✅ done (`docs/VISION_DEMO.md`) |
 
-**67 tests pass; ruff clean. Deployed at**
+**83 tests pass; ruff clean. Deployed at**
 `https://plum-assignment-a651.onrender.com/`.
 
 ---

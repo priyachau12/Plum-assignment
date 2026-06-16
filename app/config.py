@@ -54,10 +54,21 @@ class Settings(BaseSettings):
     # --- LLM ---
     use_llm: bool = True  # master switch; set false for offline/deterministic runs
     llm_provider: str = "anthropic"
-    llm_model: str = "claude-sonnet-4-6"  # vision-capable; configurable
+    llm_model: str = "claude-sonnet-4-6"  # vision-capable; the strong/escalation tier
     llm_timeout_seconds: float = 30.0
     llm_max_attempts: int = 2  # retries for transient LLM/network failures
     anthropic_api_key: str | None = None
+
+    # --- Extraction self-correction agent (perception layer) ---
+    # When enabled, a weak/incomplete document read is retried with a sharper
+    # prompt and escalated from the cheap baseline model to `llm_model`, up to
+    # `extraction_max_attempts`, before degrading. Only fires on the live LLM
+    # path; the injected-content (test) path is untouched. Disabling it (or
+    # max_attempts=1) reproduces the original single-shot behavior.
+    extraction_agent_enabled: bool = True
+    extraction_confidence_threshold: float = 0.67  # retry when completeness is below this
+    extraction_max_attempts: int = 3  # total attempts per document (incl. the first)
+    llm_model_fast: str = "claude-haiku-4-5-20251001"  # cheap baseline tier
 
 
 @lru_cache

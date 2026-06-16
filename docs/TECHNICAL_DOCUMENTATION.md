@@ -289,6 +289,10 @@ each maps 1:1 to a `Settings` field. Copy `.env.example` → `.env` to override.
 | `LLM_MAX_ATTEMPTS` | `llm_max_attempts` | `2` | Phase 4 (retries) |
 | `USE_LLM` | `use_llm` | `True` | master switch; `false` ⇒ deterministic/offline |
 | `ANTHROPIC_API_KEY` | `anthropic_api_key` | `None` | Phase 2 |
+| `EXTRACTION_AGENT_ENABLED` | `extraction_agent_enabled` | `True` | extraction agent; `false` ⇒ single-shot |
+| `EXTRACTION_CONFIDENCE_THRESHOLD` | `extraction_confidence_threshold` | `0.67` | retry when completeness is below this |
+| `EXTRACTION_MAX_ATTEMPTS` | `extraction_max_attempts` | `3` | attempts per document (incl. the first) |
+| `LLM_MODEL_FAST` | `llm_model_fast` | `claude-haiku-4-5-20251001` | cheap baseline tier (escalates to `llm_model`) |
 
 `get_settings()` is `lru_cache`d → the env is read and validated exactly once
 per process. Tests call `get_settings.cache_clear()` to re-read.
@@ -459,12 +463,28 @@ catch `LLMError` and degrade.
 - `verify_documents(state, *, policy)` → `{trace, blocking_issues, status?}` —
   thin adapter over `document_verifier.verify_documents`; sets `status=BLOCKED`
   on any blocking issue.
-- `extract(state, *, llm)` → `{extracted_content?, extraction_confidence?,
-  degraded?, trace}` — use inline `content`, else `llm.extract_document`; honors
-  `simulate_component_failure` by degrading (TC011).
+- `extract(state, *, agent)` → `{extracted_content?, extraction_confidence?,
+  degraded?, trace}` — use inline `content`, else run the `ExtractionAgent`
+  self-correction loop; honors `simulate_component_failure` by degrading (TC011).
 - `normalize_diagnosis(state, *, policy)` → `{normalized_diagnosis, trace}`.
 - `adjudicate(state, *, policy)` → `{adjudication_result, status=DECIDED, trace}`.
 - `explain(state, *, llm)` → `{explanation, trace}`.
+
+### `ExtractionAgent(llm, config).run(document) -> ExtractionAgentResult`
+- **Input:** an `LLMClient` + `ExtractionAgentConfig{enabled, confidence_threshold,
+  max_attempts, model_fast, model_strong}` (built from `Settings` via
+  `from_settings`), and one `Document`.
+- **Behavior:** loops act → observe (`extraction_completeness`) → decide. First
+  attempt uses `model_fast`; retries use `model_strong` with a sharper,
+  field-targeted prompt hint. Converges when completeness ≥ threshold; gives up
+  at `max_attempts`. Disabled (or `max_attempts=1`) ⇒ one strong-model shot
+  (original behavior).
+- **Output:** `ExtractionAgentResult{ fields, confidence, gave_up,
+  attempts[AttemptRecord{attempt, model, succeeded, completeness, note}] }`.
+  `gave_up=True` tells the `extract` node to degrade. Best-effort `fields` are
+  returned even on give-up.
+- **Raises:** nothing — `LLMError` per attempt is caught and recorded; all-failed
+  ⇒ `gave_up=True` with empty `fields`.
 
 ### `normalize_diagnosis(request, extracted_content, policy) -> DiagnosisMatch`
 - **Input:** the claim, the extracted-content map, the policy.

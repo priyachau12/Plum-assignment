@@ -1,33 +1,41 @@
 # Eval Report — all 12 test cases
 
-**Result: 12/12 cases match the expected outcome.** Run offline (no LLM) so the output is deterministic.
+**Result: 12/12 cases match every expected outcome and `system_must` requirement.** Run offline (no LLM) so the output is deterministic. Each case is checked against its full requirements — decision, amount, message specificity, eligibility dates, confidence bounds, fraud signals, and the discount-before-co-pay breakdown — not just the headline decision.
 
-| Case | Name | Expected (summary) | Actual | Match |
-|------|------|--------------------|--------|-------|
-| TC001 | Wrong Document Uploaded | {"status": "BLOCKED", "blocking": "MISSING_REQUIRED_DOCUMENT"} | BLOCKED MISSING_REQUIRED_DOCUMENT | ✅ |
-| TC002 | Unreadable Document | {"status": "BLOCKED", "blocking": "UNREADABLE_DOCUMENT"} | BLOCKED UNREADABLE_DOCUMENT | ✅ |
-| TC003 | Documents Belong to Different Patients | {"status": "BLOCKED", "blocking": "PATIENT_MISMATCH"} | BLOCKED PATIENT_MISMATCH | ✅ |
-| TC004 | Clean Consultation — Full Approval | {"decision": "APPROVED", "approved_amount": 1350} | APPROVED ₹1350.0 | ✅ |
-| TC005 | Waiting Period — Diabetes | {"decision": "REJECTED", "reason": "WAITING_PERIOD"} | REJECTED ₹0.0 | ✅ |
-| TC006 | Dental Partial Approval — Cosmetic Exclusion | {"decision": "PARTIAL", "approved_amount": 8000} | PARTIAL ₹8000.0 | ✅ |
-| TC007 | MRI Without Pre-Authorization | {"decision": "REJECTED", "reason": "PRE_AUTH_MISSING"} | REJECTED ₹0.0 | ✅ |
-| TC008 | Per-Claim Limit Exceeded | {"decision": "REJECTED", "reason": "PER_CLAIM_EXCEEDED"} | REJECTED ₹0.0 | ✅ |
-| TC009 | Fraud Signal — Multiple Same-Day Claims | {"decision": "MANUAL_REVIEW"} | MANUAL_REVIEW ₹0.0 | ✅ |
-| TC010 | Network Hospital — Discount Applied | {"decision": "APPROVED", "approved_amount": 3240} | APPROVED ₹3240.0 | ✅ |
-| TC011 | Component Failure — Graceful Degradation | {"decision": "APPROVED", "degraded": true} | APPROVED ₹4000.0 | ✅ |
-| TC012 | Excluded Treatment | {"decision": "REJECTED", "reason": "EXCLUDED_CONDITION"} | REJECTED ₹0.0 | ✅ |
+| Case | Name | Actual | Checks | Match |
+|------|------|--------|--------|-------|
+| TC001 | Wrong Document Uploaded | BLOCKED MISSING_REQUIRED_DOCUMENT | 3/3 | ✅ |
+| TC002 | Unreadable Document | BLOCKED UNREADABLE_DOCUMENT | 3/3 | ✅ |
+| TC003 | Documents Belong to Different Patients | BLOCKED PATIENT_MISMATCH | 3/3 | ✅ |
+| TC004 | Clean Consultation — Full Approval | APPROVED Rs.1350.0 | 3/3 | ✅ |
+| TC005 | Waiting Period — Diabetes | REJECTED Rs.0.0 | 2/2 | ✅ |
+| TC006 | Dental Partial Approval — Cosmetic Exclusion | PARTIAL Rs.8000.0 | 3/3 | ✅ |
+| TC007 | MRI Without Pre-Authorization | REJECTED Rs.0.0 | 3/3 | ✅ |
+| TC008 | Per-Claim Limit Exceeded | REJECTED Rs.0.0 | 2/2 | ✅ |
+| TC009 | Fraud Signal — Multiple Same-Day Claims | MANUAL_REVIEW Rs.0.0 | 2/2 | ✅ |
+| TC010 | Network Hospital — Discount Applied | APPROVED Rs.3240.0 | 3/3 | ✅ |
+| TC011 | Component Failure — Graceful Degradation | APPROVED Rs.4000.0 | 4/4 | ✅ |
+| TC012 | Excluded Treatment | REJECTED Rs.0.0 | 2/2 | ✅ |
 
 ---
 
-## Full decision output per case
+## Per-case detail
 
 ### TC001 — Wrong Document Uploaded
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ stops before any decision (BLOCKED)
+- ✅ names the uploaded type AND the required type
+- ✅ flags the missing required document
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_B955742B",
+  "claim_id": "CLM_1584C5AE",
   "status": "BLOCKED",
   "decision": null,
   "approved_amount": null,
@@ -119,11 +127,19 @@
 
 ### TC002 — Unreadable Document
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ identifies the unreadable document
+- ✅ asks to re-upload that specific document
+- ✅ does NOT reject the claim
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_DF535999",
+  "claim_id": "CLM_B312532D",
   "status": "BLOCKED",
   "decision": null,
   "approved_amount": null,
@@ -207,11 +223,19 @@
 
 ### TC003 — Documents Belong to Different Patients
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ detects documents for different patients
+- ✅ surfaces both specific names
+- ✅ does not proceed to a decision
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_6164C836",
+  "claim_id": "CLM_6BF11367",
   "status": "BLOCKED",
   "decision": null,
   "approved_amount": null,
@@ -298,11 +322,19 @@
 
 ### TC004 — Clean Consultation — Full Approval
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ APPROVED
+- ✅ approved amount 1350 (10% co-pay)
+- ✅ confidence above 0.85
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_545E6B4E",
+  "claim_id": "CLM_6E7FDAFE",
   "status": "DECIDED",
   "decision": "APPROVED",
   "approved_amount": 1350.0,
@@ -319,6 +351,8 @@
     "after_network_discount": 1500.0,
     "copay_percent": 10.0,
     "after_copay": 1350.0,
+    "per_claim_cap": 5000.0,
+    "remaining_annual_opd": 45000.0,
     "approved_amount": 1350.0
   },
   "note": null,
@@ -409,6 +443,18 @@
       "data": {}
     },
     {
+      "step": "adjudicate.minimum_amount",
+      "status": "OK",
+      "detail": "Claimed amount 1500 meets the minimum of 500.",
+      "data": {}
+    },
+    {
+      "step": "adjudicate.submission_window",
+      "status": "OK",
+      "detail": "No submission date provided; assumed within the 30-day deadline.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
@@ -439,6 +485,12 @@
       "data": {}
     },
     {
+      "step": "adjudicate.annual_limit",
+      "status": "OK",
+      "detail": "45000 of the annual OPD limit (50000) remains.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.financials",
       "status": "OK",
       "detail": "covered 1500 -> network discount 0% -> 1500 -> co-pay 10% -> approved 1350.",
@@ -449,6 +501,8 @@
         "after_network_discount": 1500.0,
         "copay_percent": 10.0,
         "after_copay": 1350.0,
+        "per_claim_cap": 5000.0,
+        "remaining_annual_opd": 45000.0,
         "approved_amount": 1350.0
       }
     },
@@ -466,11 +520,18 @@
 
 ### TC005 — Waiting Period — Diabetes
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ REJECTED for WAITING_PERIOD
+- ✅ states the eligibility date 2024-11-30
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_EEDC1EBA",
+  "claim_id": "CLM_CE1F3A4A",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
@@ -571,6 +632,18 @@
       "data": {}
     },
     {
+      "step": "adjudicate.minimum_amount",
+      "status": "OK",
+      "detail": "Claimed amount 3000 meets the minimum of 500.",
+      "data": {}
+    },
+    {
+      "step": "adjudicate.submission_window",
+      "status": "OK",
+      "detail": "No submission date provided; assumed within the 30-day deadline.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
@@ -596,11 +669,19 @@
 
 ### TC006 — Dental Partial Approval — Cosmetic Exclusion
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ PARTIAL
+- ✅ approved amount 8000 (root canal only)
+- ✅ itemizes covered vs rejected lines with a per-line reason
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_331992A9",
+  "claim_id": "CLM_8EF4C1AE",
   "status": "DECIDED",
   "decision": "PARTIAL",
   "approved_amount": 8000.0,
@@ -630,6 +711,8 @@
     "after_network_discount": 8000.0,
     "copay_percent": 0.0,
     "after_copay": 8000.0,
+    "per_claim_cap": 10000.0,
+    "remaining_annual_opd": 50000.0,
     "approved_amount": 8000.0
   },
   "note": null,
@@ -700,6 +783,18 @@
       "data": {}
     },
     {
+      "step": "adjudicate.minimum_amount",
+      "status": "OK",
+      "detail": "Claimed amount 12000 meets the minimum of 500.",
+      "data": {}
+    },
+    {
+      "step": "adjudicate.submission_window",
+      "status": "OK",
+      "detail": "No submission date provided; assumed within the 30-day deadline.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
@@ -730,6 +825,12 @@
       "data": {}
     },
     {
+      "step": "adjudicate.annual_limit",
+      "status": "OK",
+      "detail": "50000 of the annual OPD limit (50000) remains.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.financials",
       "status": "OK",
       "detail": "covered 8000 -> network discount 0% -> 8000 -> co-pay 0% -> approved 8000.",
@@ -740,6 +841,8 @@
         "after_network_discount": 8000.0,
         "copay_percent": 0.0,
         "after_copay": 8000.0,
+        "per_claim_cap": 10000.0,
+        "remaining_annual_opd": 50000.0,
         "approved_amount": 8000.0
       }
     },
@@ -757,11 +860,19 @@
 
 ### TC007 — MRI Without Pre-Authorization
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ REJECTED for PRE_AUTH_MISSING
+- ✅ explains pre-authorization was required
+- ✅ tells the member to resubmit with pre-auth
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_1FA4BEF7",
+  "claim_id": "CLM_08B56C93",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
@@ -882,6 +993,18 @@
       "data": {}
     },
     {
+      "step": "adjudicate.minimum_amount",
+      "status": "OK",
+      "detail": "Claimed amount 15000 meets the minimum of 500.",
+      "data": {}
+    },
+    {
+      "step": "adjudicate.submission_window",
+      "status": "OK",
+      "detail": "No submission date provided; assumed within the 30-day deadline.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
@@ -913,11 +1036,18 @@
 
 ### TC008 — Per-Claim Limit Exceeded
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ REJECTED for PER_CLAIM_EXCEEDED
+- ✅ states the limit (5000) and the claimed amount (7500)
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_E8CD23BF",
+  "claim_id": "CLM_245BD5D7",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
@@ -1018,6 +1148,18 @@
       "data": {}
     },
     {
+      "step": "adjudicate.minimum_amount",
+      "status": "OK",
+      "detail": "Claimed amount 7500 meets the minimum of 500.",
+      "data": {}
+    },
+    {
+      "step": "adjudicate.submission_window",
+      "status": "OK",
+      "detail": "No submission date provided; assumed within the 30-day deadline.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
@@ -1055,11 +1197,18 @@
 
 ### TC009 — Fraud Signal — Multiple Same-Day Claims
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ routed to MANUAL_REVIEW (not auto-rejected)
+- ✅ includes the specific signal that triggered the flag
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_638CEEE3",
+  "claim_id": "CLM_9A666FC7",
   "status": "DECIDED",
   "decision": "MANUAL_REVIEW",
   "approved_amount": 0.0,
@@ -1162,6 +1311,18 @@
       "data": {}
     },
     {
+      "step": "adjudicate.minimum_amount",
+      "status": "OK",
+      "detail": "Claimed amount 4800 meets the minimum of 500.",
+      "data": {}
+    },
+    {
+      "step": "adjudicate.submission_window",
+      "status": "OK",
+      "detail": "No submission date provided; assumed within the 30-day deadline.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
@@ -1209,11 +1370,19 @@
 
 ### TC010 — Network Hospital — Discount Applied
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ APPROVED
+- ✅ approved amount 3240
+- ✅ network discount applied BEFORE co-pay (3600 then 3240)
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_747F976C",
+  "claim_id": "CLM_876976B3",
   "status": "DECIDED",
   "decision": "APPROVED",
   "approved_amount": 3240.0,
@@ -1230,6 +1399,8 @@
     "after_network_discount": 3600.0,
     "copay_percent": 10.0,
     "after_copay": 3240.0,
+    "per_claim_cap": 5000.0,
+    "remaining_annual_opd": 42000.0,
     "approved_amount": 3240.0
   },
   "note": null,
@@ -1320,6 +1491,18 @@
       "data": {}
     },
     {
+      "step": "adjudicate.minimum_amount",
+      "status": "OK",
+      "detail": "Claimed amount 4500 meets the minimum of 500.",
+      "data": {}
+    },
+    {
+      "step": "adjudicate.submission_window",
+      "status": "OK",
+      "detail": "No submission date provided; assumed within the 30-day deadline.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
@@ -1350,6 +1533,12 @@
       "data": {}
     },
     {
+      "step": "adjudicate.annual_limit",
+      "status": "OK",
+      "detail": "42000 of the annual OPD limit (50000) remains.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.financials",
       "status": "OK",
       "detail": "covered 4500 -> network discount 20% -> 3600 -> co-pay 10% -> approved 3240.",
@@ -1360,6 +1549,8 @@
         "after_network_discount": 3600.0,
         "copay_percent": 10.0,
         "after_copay": 3240.0,
+        "per_claim_cap": 5000.0,
+        "remaining_annual_opd": 42000.0,
         "approved_amount": 3240.0
       }
     },
@@ -1377,11 +1568,20 @@
 
 ### TC011 — Component Failure — Graceful Degradation
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ does not crash; still produces an APPROVED decision
+- ✅ marks the run degraded
+- ✅ confidence reduced below a clean approval
+- ✅ recommends manual review due to incomplete processing
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_752EF998",
+  "claim_id": "CLM_DE5E5736",
   "status": "DECIDED",
   "decision": "APPROVED",
   "approved_amount": 4000.0,
@@ -1390,7 +1590,7 @@
   "confidence": 0.65,
   "degraded": true,
   "blocking_issues": [],
-  "explanation": "Your claim was APPROVED for 4000.",
+  "explanation": "Your claim was APPROVED for 4000. A processing component failed and was skipped; manual review is recommended due to incomplete processing.",
   "financial_breakdown": {
     "covered_base": 4000.0,
     "is_network": false,
@@ -1398,6 +1598,8 @@
     "after_network_discount": 4000.0,
     "copay_percent": 0.0,
     "after_copay": 4000.0,
+    "per_claim_cap": 8000.0,
+    "remaining_annual_opd": 50000.0,
     "approved_amount": 4000.0
   },
   "note": "A processing component failed and was skipped; manual review is recommended due to incomplete processing.",
@@ -1478,6 +1680,18 @@
       "data": {}
     },
     {
+      "step": "adjudicate.minimum_amount",
+      "status": "OK",
+      "detail": "Claimed amount 4000 meets the minimum of 500.",
+      "data": {}
+    },
+    {
+      "step": "adjudicate.submission_window",
+      "status": "OK",
+      "detail": "No submission date provided; assumed within the 30-day deadline.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.exclusions",
       "status": "OK",
       "detail": "No policy exclusion matched the diagnosis/treatment.",
@@ -1508,6 +1722,12 @@
       "data": {}
     },
     {
+      "step": "adjudicate.annual_limit",
+      "status": "OK",
+      "detail": "50000 of the annual OPD limit (50000) remains.",
+      "data": {}
+    },
+    {
       "step": "adjudicate.financials",
       "status": "OK",
       "detail": "covered 4000 -> network discount 0% -> 4000 -> co-pay 0% -> approved 4000.",
@@ -1518,6 +1738,8 @@
         "after_network_discount": 4000.0,
         "copay_percent": 0.0,
         "after_copay": 4000.0,
+        "per_claim_cap": 8000.0,
+        "remaining_annual_opd": 50000.0,
         "approved_amount": 4000.0
       }
     },
@@ -1535,11 +1757,18 @@
 
 ### TC012 — Excluded Treatment
 
-**Match:** ✅ PASS
+**Result:** ✅ PASS
+
+**`system_must` checks:**
+
+- ✅ REJECTED for EXCLUDED_CONDITION
+- ✅ confidence above 0.90
+
+**Full decision output:**
 
 ```json
 {
-  "claim_id": "CLM_2F768231",
+  "claim_id": "CLM_DE4F6924",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
@@ -1637,6 +1866,18 @@
       "step": "adjudicate.eligibility",
       "status": "OK",
       "detail": "Member EMP009 (Anita Desai) is covered.",
+      "data": {}
+    },
+    {
+      "step": "adjudicate.minimum_amount",
+      "status": "OK",
+      "detail": "Claimed amount 8000 meets the minimum of 500.",
+      "data": {}
+    },
+    {
+      "step": "adjudicate.submission_window",
+      "status": "OK",
+      "detail": "No submission date provided; assumed within the 30-day deadline.",
       "data": {}
     },
     {
