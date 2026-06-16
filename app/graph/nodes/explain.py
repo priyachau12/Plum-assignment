@@ -53,6 +53,17 @@ def _build_explanation_text(result: DecisionResult) -> str:
     return ("Your claim has been routed to MANUAL REVIEW. " + note).strip()
 
 
+def _is_consistent_with_decision(text: str, result: DecisionResult) -> bool:
+    """Guard against an LLM explanation that drifts from the decision. For a
+    payout (APPROVED/PARTIAL) the approved amount must actually appear in the
+    text; if it doesn't, we don't trust the rephrasing. Non-payout decisions
+    (amount 0) are not amount-checked, so the guard never false-triggers on them."""
+    if result.decision in (Decision.APPROVED, Decision.PARTIAL):
+        amount = f"{result.approved_amount:.0f}"
+        return amount in text.replace(",", "")
+    return True
+
+
 def explain(state: ClaimState, *, llm: LLMClient | None) -> dict:
     result = state.get("adjudication_result")
     if result is None:
@@ -71,15 +82,24 @@ def explain(state: ClaimState, *, llm: LLMClient | None) -> dict:
 
     if llm is not None:
         try:
-            text = llm.generate_explanation(
+            ai_text = llm.generate_explanation(
                 decision=result.decision.value,
                 approved_amount=result.approved_amount,
                 reasons=[r.value for r in result.rejection_reasons],
                 fallback=text,
             )
-            source = "llm"
         except LLMError as exc:
             logger.warning("explain: AI failed, using built text: %s", exc)
+        else:
+            # Only trust the rephrasing if it agrees with the decision's numbers.
+            if _is_consistent_with_decision(ai_text, result):
+                text = ai_text
+                source = "llm"
+            else:
+                logger.warning(
+                    "explain: AI text did not match the approved amount; using built text."
+                )
+                source = "template-guarded"
 
     return {
         "explanation": text,

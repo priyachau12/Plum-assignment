@@ -148,10 +148,37 @@ def approved_result() -> DecisionResult:
 
 
 def test_explain_prefers_ai(approved_result):
+    # Consistent AI text (mentions the approved amount) is used as-is.
     out = explain(
-        {"adjudication_result": approved_result}, llm=FakeLLM(explanation="Friendly text")
+        {"adjudication_result": approved_result},
+        llm=FakeLLM(explanation="Good news — Rs. 1,350 is approved and on its way."),
     )
-    assert out["explanation"] == "Friendly text"
+    assert out["explanation"] == "Good news — Rs. 1,350 is approved and on its way."
+    assert out["trace"][0].data["source"] == "llm"
+
+
+def test_explain_guards_against_amount_drift(approved_result):
+    # AI text that contradicts the approved amount (1350) is rejected; the node
+    # falls back to the deterministic template, which carries the correct number.
+    out = explain(
+        {"adjudication_result": approved_result},
+        llm=FakeLLM(explanation="Your claim is fully approved for Rs. 9,999."),
+    )
+    assert "1350" in out["explanation"]
+    assert "9,999" not in out["explanation"]
+    assert out["trace"][0].data["source"] == "template-guarded"
+
+
+def test_explain_guard_does_not_trigger_on_rejection():
+    rejected = DecisionResult(
+        decision=Decision.REJECTED,
+        approved_amount=0.0,
+        confidence=0.95,
+    )
+    # No amount to match on a rejection — arbitrary AI text is accepted.
+    out = explain({"adjudication_result": rejected}, llm=FakeLLM(explanation="Sorry, declined."))
+    assert out["explanation"] == "Sorry, declined."
+    assert out["trace"][0].data["source"] == "llm"
 
 
 def test_explain_falls_back_to_built_text_on_failure(approved_result):
