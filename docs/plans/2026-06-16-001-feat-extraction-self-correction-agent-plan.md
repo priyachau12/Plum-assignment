@@ -1,7 +1,7 @@
 ---
 title: "feat: Extraction self-correction agent (perception layer)"
 type: feat
-status: active
+status: completed
 date: 2026-06-16
 ---
 
