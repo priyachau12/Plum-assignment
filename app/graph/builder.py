@@ -30,8 +30,6 @@ from functools import partial
 
 from langgraph.graph import END, START, StateGraph
 
-from app.agents.extraction_agent import ExtractionAgent, ExtractionAgentConfig
-from app.config import Settings, get_settings
 from app.graph.nodes.adjudicate import adjudicate
 from app.graph.nodes.classify import classify
 from app.graph.nodes.explain import explain
@@ -51,25 +49,15 @@ def _after_document_verification(state: ClaimState) -> str:
     return "stop" if state.get("blocking_issues") else "continue"
 
 
-def build_graph(policy: Policy, llm: LLMClient | None = None, settings: Settings | None = None):
+def build_graph(policy: Policy, llm: LLMClient | None = None):
     """Build and compile the full claim-processing pipeline."""
     graph = StateGraph(ClaimState)
 
-    # The extraction agent wraps the LLM on the real-document path with a
-    # self-correction loop. Built only when an LLM client is present, so the
-    # offline/injected-content path is unaffected (agent stays None).
-    settings = settings or get_settings()
-    extraction_agent = (
-        ExtractionAgent(llm, ExtractionAgentConfig.from_settings(settings))
-        if llm is not None
-        else None
-    )
-
-    # Deterministic steps get the policy; AI steps get the (optional) client/agent.
+    # Deterministic steps get the policy; AI steps get the (optional) client.
     graph.add_node("intake", partial(intake, policy=policy))
     graph.add_node("classify", partial(classify, llm=llm))
     graph.add_node("verify_documents", partial(verify_documents, policy=policy))
-    graph.add_node("extract", partial(extract, agent=extraction_agent))
+    graph.add_node("extract", partial(extract, llm=llm))
     graph.add_node("normalize_diagnosis", partial(normalize_diagnosis, policy=policy))
     graph.add_node("adjudicate", partial(adjudicate, policy=policy))
     graph.add_node("explain", partial(explain, llm=llm))

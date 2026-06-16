@@ -33,13 +33,6 @@ Return ONLY valid JSON, no prose.
 File name: {file_name}
 """
 
-# Appended by the extraction self-correction agent on a retry, after a weak first
-# read. It names the buckets that came back empty so the model re-focuses on them.
-EXTRACTION_RETRY_HINT = """A first read of this document was incomplete — these field groups \
-came back empty: {missing}. Look at the attached document image/PDF AGAIN, more carefully: \
-check the header, footer, rubber stamps, and any handwritten regions. Return the COMPLETE \
-JSON object with those fields filled wherever they are legible. Return ONLY valid JSON, no prose."""
-
 EXPLANATION_PROMPT = """Rewrite the following claim decision as a clear, friendly,
 2-4 sentence explanation for the member. Output ONLY the explanation text — no
 preamble, no greeting, no markdown headers. Do not change any numbers or the

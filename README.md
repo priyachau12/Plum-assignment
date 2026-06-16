@@ -54,10 +54,8 @@ POST /claims  (JSON)   or   POST /claims/upload  (multipart: real images/PDFs)
   └─ verify         required docs present? readable? same patient?
         ├─ blocking issue ─▶ halt ─▶ respond   (extract/adjudicate never run)
         └─ ok ─▶
-  └─ extract (agent · LLM vision)  a self-correction loop reads structured fields
-                           from each document; on a weak/incomplete read it re-prompts
-                           and escalates from a cheap model to a stronger one, then
-                           degrades gracefully (or uses injected `content` on the JSON path)
+  └─ extract (LLM vision)  read structured fields from each document image/PDF
+                           (or use the pre-extracted `content` on the JSON path)
   └─ normalize      map free-text diagnosis → canonical policy key
   └─ adjudicate     ordered, pure rule engine → decision + amount + confidence
   └─ explain (LLM)  member-facing explanation generated from the trace
@@ -66,15 +64,10 @@ POST /claims  (JSON)   or   POST /claims/upload  (multipart: real images/PDFs)
 
 The **classify** and **extract** steps send the actual file bytes (base64 image
 or PDF blocks) to Claude, so handwritten prescriptions, stamped bills, and phone
-photos are read for real. **Extraction is an agent**: a weak or incomplete read
-isn't accepted as-is — the agent re-prompts with a sharper, field-targeted hint
-and escalates from a cheap baseline model to the stronger one, looping to a
-capped budget before degrading. So manual review / re-upload is the last resort,
-not the first reaction (`app/agents/extraction_agent.py`). The early-stop gate
-runs *after classify but before extract*, so a wrong/unreadable/mismatched
-document is caught before the expensive full extraction. The JSON path keeps a
-deterministic bypass (declared type + injected `content`) that keeps the 12-case
-eval reproducible and offline — the agent never runs on it.
+photos are read for real. The early-stop gate runs *after classify but before
+extract*, so a wrong/unreadable/mismatched document is caught before the
+expensive full extraction. The JSON path keeps a deterministic bypass (declared
+type + injected `content`) that keeps the 12-case eval reproducible and offline.
 
 Every node appends a structured entry to a single `trace` list, and the trace is
 embedded in the response — so any decision is reconstructable step-by-step
@@ -221,7 +214,7 @@ deterministically — see [`docs/VISION_DEMO.md`](docs/VISION_DEMO.md).
 │   ├── policy/            # policy_terms.json loader
 │   ├── verification/      # early document checks
 │   └── static/            # single-page UI
-├── tests/                 # pytest suite (83 tests)
+├── tests/                 # pytest suite (67 tests)
 ├── scripts/
 │   ├── run_eval.py        # generates docs/EVAL_REPORT.md (offline, deterministic)
 │   ├── make_sample_docs.py    # generates sample document images → samples/

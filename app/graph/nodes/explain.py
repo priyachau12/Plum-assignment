@@ -11,7 +11,6 @@ or the decision, and falls back to the built text on any failure.
 from __future__ import annotations
 
 import logging
-import re
 
 from app.graph.state import ClaimState
 from app.llm.client import LLMClient, LLMError
@@ -54,28 +53,6 @@ def _build_explanation_text(result: DecisionResult) -> str:
     return ("Your claim has been routed to MANUAL REVIEW. " + note).strip()
 
 
-def _is_consistent_with_decision(text: str, result: DecisionResult) -> bool:
-    """Guard against an LLM explanation that drifts from the decision. For a
-    payout (APPROVED/PARTIAL) the approved amount must actually appear in the
-    text; if it doesn't, we don't trust the rephrasing. Non-payout decisions
-    (amount 0) are not amount-checked, so the guard never false-triggers on them.
-
-    Numbers are parsed and compared numerically — not as substrings — so '1,350'
-    matches 1350.0, a decimal payout (e.g. 899.50) isn't lost to integer
-    rounding, and an approved 350 does NOT spuriously match an AI-quoted '1,350'.
-    """
-    if result.decision not in (Decision.APPROVED, Decision.PARTIAL):
-        return True
-    target = round(result.approved_amount, 2)
-    for token in re.findall(r"\d[\d,]*(?:\.\d+)?", text):
-        try:
-            if abs(float(token.replace(",", "")) - target) < 0.01:
-                return True
-        except ValueError:
-            continue
-    return False
-
-
 def explain(state: ClaimState, *, llm: LLMClient | None) -> dict:
     result = state.get("adjudication_result")
     if result is None:
@@ -94,24 +71,15 @@ def explain(state: ClaimState, *, llm: LLMClient | None) -> dict:
 
     if llm is not None:
         try:
-            ai_text = llm.generate_explanation(
+            text = llm.generate_explanation(
                 decision=result.decision.value,
                 approved_amount=result.approved_amount,
                 reasons=[r.value for r in result.rejection_reasons],
                 fallback=text,
             )
+            source = "llm"
         except LLMError as exc:
             logger.warning("explain: AI failed, using built text: %s", exc)
-        else:
-            # Only trust the rephrasing if it agrees with the decision's numbers.
-            if _is_consistent_with_decision(ai_text, result):
-                text = ai_text
-                source = "llm"
-            else:
-                logger.warning(
-                    "explain: AI text did not match the approved amount; using built text."
-                )
-                source = "template-guarded"
 
     return {
         "explanation": text,
