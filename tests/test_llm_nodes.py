@@ -11,12 +11,26 @@ from typing import Any
 
 import pytest
 
+from app.agents.extraction_agent import ExtractionAgent, ExtractionAgentConfig
 from app.graph.nodes.classify import classify
 from app.graph.nodes.explain import explain
 from app.graph.nodes.extract import extract
 from app.llm.client import DocumentClassification, LLMClient, LLMError
 from app.models.claim import ClaimRequest, Document, DocumentQuality, DocumentType
 from app.models.decision import Decision, DecisionResult, TraceStatus
+
+
+def _agent(llm, **cfg) -> ExtractionAgent:
+    """Wrap a fake client in an ExtractionAgent for extract-node tests."""
+    base = dict(
+        enabled=True,
+        confidence_threshold=0.67,
+        max_attempts=3,
+        model_fast="fast",
+        model_strong="strong",
+    )
+    base.update(cfg)
+    return ExtractionAgent(llm, ExtractionAgentConfig(**base))
 
 
 class FakeLLM(LLMClient):
@@ -65,22 +79,53 @@ def _request_without_content() -> ClaimRequest:
     )
 
 
-def test_extract_uses_validated_ai_output():
-    out = extract(
-        {"request": _request_without_content()}, llm=FakeLLM(fields={"diagnosis": "Dengue"})
+def _request_with_content() -> ClaimRequest:
+    return ClaimRequest(
+        member_id="EMP001",
+        policy_id="PLUM_GHI_2024",
+        claim_category="CONSULTATION",
+        treatment_date="2024-11-01",
+        claimed_amount=1500,
+        documents=[
+            Document(file_id="F1", actual_type="PRESCRIPTION", content={"diagnosis": "Viral Fever"})
+        ],
     )
+
+
+def test_extract_uses_validated_ai_output():
+    full = {"patient_name": "R", "date": "2024-11-01", "diagnosis": "Dengue"}
+    out = extract({"request": _request_without_content()}, agent=_agent(FakeLLM(fields=full)))
     assert out["extracted_content"]["F1"]["diagnosis"] == "Dengue"
     assert not out.get("degraded")
 
 
+def test_extract_inline_content_bypasses_agent():
+    # Determinism guard: a document with inline content must NOT invoke the agent
+    # (this is what keeps the injected-content eval reproducible).
+    llm = FakeLLM(fields={"diagnosis": "SHOULD NOT BE USED"})
+    out = extract({"request": _request_with_content()}, agent=_agent(llm))
+    assert llm.extract_calls == []  # agent.run never reached the LLM
+    assert "extracted_content" not in out  # the provided content is used directly
+    assert not out.get("degraded")
+
+
+def test_extract_simulate_failure_skips_agent():
+    req = _request_without_content()
+    req.simulate_component_failure = True
+    llm = FakeLLM()
+    out = extract({"request": req}, agent=_agent(llm))
+    assert out["degraded"] is True
+    assert llm.extract_calls == []  # short-circuited before the agent ran
+
+
 def test_extract_degrades_on_ai_error():
-    out = extract({"request": _request_without_content()}, llm=FakeLLM(fail=True))
+    out = extract({"request": _request_without_content()}, agent=_agent(FakeLLM(fail=True)))
     assert out["degraded"] is True
     assert any(t.status == TraceStatus.FAILED for t in out["trace"])
 
 
 def test_extract_degrades_without_ai():
-    out = extract({"request": _request_without_content()}, llm=None)
+    out = extract({"request": _request_without_content()}, agent=None)
     assert out["degraded"] is True
     assert any(t.status == TraceStatus.SKIPPED for t in out["trace"])
 
@@ -191,12 +236,14 @@ def test_classify_skips_when_no_ai_and_no_declared_type():
 
 def test_extract_full_fields_give_full_confidence():
     full = {"patient_name": "Rajesh Kumar", "date": "2024-11-01", "diagnosis": "Viral Fever"}
-    out = extract({"request": _request_without_content()}, llm=FakeLLM(fields=full))
+    out = extract({"request": _request_without_content()}, agent=_agent(FakeLLM(fields=full)))
     assert out["extraction_confidence"] == 1.0
 
 
 def test_extract_partial_fields_lower_confidence():
-    out = extract({"request": _request_without_content()}, llm=FakeLLM(fields={"diagnosis": "X"}))
+    out = extract(
+        {"request": _request_without_content()}, agent=_agent(FakeLLM(fields={"diagnosis": "X"}))
+    )
     assert out["extraction_confidence"] < 1.0
 
 

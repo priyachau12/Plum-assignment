@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI):
     # Without a policy we cannot make decisions, so the graph stays unbuilt and
     # the claims endpoint returns 503.
     if app.state.policy is not None:
-        app.state.graph = build_graph(app.state.policy, app.state.llm)
+        app.state.graph = build_graph(app.state.policy, app.state.llm, settings)
     else:
         app.state.graph = None
         logger.error("Graph not built: policy unavailable.")
