@@ -143,6 +143,21 @@ before the engine touches it. Same validated input → same decision, always.
                           policy_terms.json  (read-only base file)
 ```
 
+The same shape as a Mermaid diagram. LLM-assisted nodes are dotted; the trunk is
+deterministic. Note `normalize_diagnosis` is **deterministic** (not an LLM node),
+and `explain` runs *after* `adjudicate` and feeds the response:
+
+```mermaid
+flowchart LR
+    User["Browser UI"] --> FastAPI["FastAPI app"] --> LangGraph["LangGraph pipeline"]
+    LangGraph --> Intake["intake · det"] --> Classify["classify · LLM"] --> VerifyGate["verify_documents · det"]
+    VerifyGate -->|blocked| Response["ClaimProcessingResult"]
+    VerifyGate -->|continue| Extract["extract · LLM"] --> Normalize["normalize_diagnosis · det"] --> RuleEngine["adjudicate · det"] --> Explain["explain · LLM"] --> Response
+    LLM["Claude (vision + text)"] -.-> Classify
+    LLM -.-> Extract
+    LLM -.-> Explain
+```
+
 **Composition root** = `app/main.py`. At startup (`lifespan`) it: configures
 logging, **loads the policy once**, **builds the graph once**, and stashes
 both plus settings on `app.state`. Request handlers never re-load these.
@@ -250,6 +265,57 @@ POST /claims
 No node failure becomes a 500; it becomes a trace entry plus a confidence
 penalty.
 
+### 7.4 Pipeline flow (diagram)
+
+The full request lifecycle. Both entry points (`POST /claims` JSON and
+`POST /claims/upload` multipart) feed the same graph; the blocking fork is the
+only branch:
+
+```mermaid
+flowchart TD
+    A["Claim submission (POST /claims JSON or POST /claims/upload)"] --> B{Valid request?}
+    B -->|No| C["HTTP 422"]
+    B -->|Yes| D["Create ClaimState"]
+    D --> E["intake — member & policy check"]
+    E --> F["classify — document type"]
+    F --> G["verify_documents — required + readable + same patient"]
+    G --> H{Any blocking issue?}
+    H -->|Yes| I["status = BLOCKED"]
+    I --> Z["Response"]
+    H -->|No| J["extract — fields, may set degraded"]
+    J --> K["normalize_diagnosis — free text to policy term"]
+    K --> L["adjudicate — rule engine"]
+    L --> M["explain — member-facing message"]
+    M --> Z
+    Z --> O["decision"]
+    Z --> P["approved_amount"]
+    Z --> Q["confidence"]
+    Z --> R["blocking_issues / explanation / line_items / financial_breakdown / degraded"]
+    Z --> S["trace"]
+```
+
+### 7.5 Early-stop gate (diagram)
+
+The gate is **not** a sequential short-circuit. All three checks run on every
+claim and their problems are **aggregated**, so a claim that is both missing a
+document *and* has a patient mismatch reports **both** in one response. The
+stop/continue fork (`_after_document_verification`) happens once, after
+aggregation:
+
+```mermaid
+flowchart TD
+    A["Claim arrives"] --> B["verify_documents"]
+    B --> C["Check required docs"]
+    B --> F["Check readability"]
+    B --> I["Check patient match"]
+    C --> AGG["Aggregate ALL blocking_issues (every check runs)"]
+    F --> AGG
+    I --> AGG
+    AGG --> D{Any blocking issue?}
+    D -->|Yes| E["status = BLOCKED → END"]
+    D -->|No| L["continue → extract"]
+```
+
 ---
 
 ## 8. The deterministic rule engine
@@ -286,6 +352,41 @@ precedence is therefore the rule order above. Every rule still appends its trace
 entry up to the deciding one, so the trace shows what was checked. (A low final
 confidence on an otherwise-approvable claim also routes to MANUAL_REVIEW — see
 §10.)
+
+The same order as a diagram — first matching rule exits; note Rule 6 (all line
+items excluded) and Rule 8 (high-value auto manual-review) sit between the
+per-claim limit and the annual limit:
+
+```mermaid
+flowchart TD
+    A["Adjudication starts"] --> B["1 · Eligibility"]
+    B -->|Fail| BX["REJECT · NOT_ELIGIBLE"]
+    B -->|Pass| C["1b · Minimum amount"]
+    C -->|Fail| CX["REJECT · BELOW_MINIMUM"]
+    C -->|Pass| D["1c · Submission window"]
+    D -->|Fail| DX["REJECT · SUBMISSION_WINDOW_EXCEEDED"]
+    D -->|Pass| E["2 · Exclusion"]
+    E -->|Excluded| EX["REJECT · EXCLUDED_CONDITION"]
+    E -->|Covered| F["3 · Waiting period"]
+    F -->|Within| FX["REJECT · WAITING_PERIOD"]
+    F -->|Outside| G["4 · Pre-auth"]
+    G -->|Missing| GX["REJECT · PRE_AUTH_MISSING"]
+    G -->|OK| H["5 · Per-claim limit"]
+    H -->|Exceeded| HX["REJECT · PER_CLAIM_EXCEEDED"]
+    H -->|Valid| LI{"6 · All line items excluded?"}
+    LI -->|Yes| LIX["REJECT · EXCLUDED_CONDITION"]
+    LI -->|No| I["7 · Fraud signals"]
+    I -->|Suspicious| IX["MANUAL_REVIEW"]
+    I -->|Safe| HV{"8 · Amount > auto-review threshold?"}
+    HV -->|Yes| HVX["MANUAL_REVIEW"]
+    HV -->|No| J["8b · Annual OPD limit"]
+    J -->|Exhausted| JX["REJECT · ANNUAL_LIMIT_EXCEEDED"]
+    J -->|Available| K["9 · Financial calc · discount → co-pay → caps"]
+    K --> CONF["Confidence calc"]
+    CONF --> M{"Confidence < 0.50?"}
+    M -->|Yes| MX["MANUAL_REVIEW"]
+    M -->|No| N["APPROVED / PARTIAL"]
+```
 
 ---
 
@@ -399,6 +500,29 @@ Concurrency note: `trace` and `blocking_issues` are declared
 `Annotated[list[...], operator.add]` in `ClaimState`, so each node returns only
 its own new entries and LangGraph **concatenates** them rather than overwriting —
 safe even if nodes are parallelized later (risk R8).
+
+As a diagram — every node appends its own entries (several nodes emit more than
+one), and the reducer concatenates them into the single trace returned in the
+response:
+
+```mermaid
+flowchart TD
+    A["intake"] --> B["1–3 entries (intake, intake.lookup, intake.policy_match)"]
+    C["classify"] --> D["1 entry per document"]
+    E["verify_documents"] --> F["3 entries (required / readability / patient)"]
+    G["extract"] --> H["1 entry"]
+    NZ["normalize_diagnosis"] --> NT["1 entry"]
+    AD["adjudicate"] --> J["up to ~13 entries (one per rule)"]
+    K["explain"] --> L["1 entry"]
+    B --> M
+    D --> M
+    F --> M
+    H --> M
+    NT --> M
+    J --> M
+    L --> M["state.trace — Annotated list, operator.add concatenates"]
+    M --> N["Returned in ClaimProcessingResult.trace"]
+```
 
 ---
 
