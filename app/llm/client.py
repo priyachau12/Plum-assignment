@@ -85,7 +85,9 @@ class LLMClient(ABC):
     def classify_document(self, document: Document) -> DocumentClassification: ...
 
     @abstractmethod
-    def extract_document(self, document: Document) -> dict[str, Any]: ...
+    def extract_document(
+        self, document: Document, *, model: str | None = None, prompt_hint: str | None = None
+    ) -> dict[str, Any]: ...
 
     @abstractmethod
     def generate_explanation(
@@ -108,13 +110,15 @@ class AnthropicLLMClient(LLMClient):
 
     # --- low-level helpers ---------------------------------------------------
 
-    def _create(self, **kwargs: Any) -> Any:
+    def _create(self, *, model: str | None = None, **kwargs: Any) -> Any:
         """Call the Messages API with a small retry on transient failures.
-        Synchronous backoff (the pipeline is synchronous by design)."""
+        Synchronous backoff (the pipeline is synchronous by design). `model`
+        overrides the default model for this one call (used by the extraction
+        agent's model tiering); None falls back to the client's default."""
         last_exc: Exception | None = None
         for attempt in range(1, self._max_attempts + 1):
             try:
-                return self._client.messages.create(model=self._model, **kwargs)
+                return self._client.messages.create(model=model or self._model, **kwargs)
             except Exception as exc:  # noqa: BLE001 - retry then normalize
                 last_exc = exc
                 logger.warning("LLM attempt %d/%d failed: %s", attempt, self._max_attempts, exc)
@@ -154,14 +158,18 @@ class AnthropicLLMClient(LLMClient):
             "source": {"type": "base64", "media_type": "image/jpeg", "data": document.data_base64},
         }
 
-    def _ask(self, document: Document, prompt: str, max_tokens: int = 1024) -> str:
-        """Send the prompt, attaching the document image/PDF when available."""
+    def _ask(
+        self, document: Document, prompt: str, max_tokens: int = 1024, model: str | None = None
+    ) -> str:
+        """Send the prompt, attaching the document image/PDF when available.
+        `model` overrides the default model for this call (model tiering)."""
         content: list[dict[str, Any]] = []
         block = self._document_block(document)
         if block is not None:
             content.append(block)
         content.append({"type": "text", "text": prompt})
         message = self._create(
+            model=model,
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": content}],
         )
@@ -205,14 +213,16 @@ class AnthropicLLMClient(LLMClient):
             patient_name=(data.get("patient_name") or None),
         )
 
-    def extract_document(self, document: Document) -> dict[str, Any]:
-        raw = self._ask(
-            document,
-            EXTRACTION_PROMPT.format(
-                document_type=document.type_label(),
-                file_name=document.file_name or document.file_id,
-            ),
+    def extract_document(
+        self, document: Document, *, model: str | None = None, prompt_hint: str | None = None
+    ) -> dict[str, Any]:
+        prompt = EXTRACTION_PROMPT.format(
+            document_type=document.type_label(),
+            file_name=document.file_name or document.file_id,
         )
+        if prompt_hint:
+            prompt = f"{prompt}\n{prompt_hint}"
+        raw = self._ask(document, prompt, model=model)
         data = self._parse_json_object(raw, "extraction")
         # Validate the model's JSON into a typed shape before the rules see it.
         # A hallucinated/mis-typed field (e.g. a non-numeric total) fails here and

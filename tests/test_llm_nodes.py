@@ -33,13 +33,17 @@ class FakeLLM(LLMClient):
         self._classification = classification or DocumentClassification(
             document_type="PRESCRIPTION", readable=True, patient_name="Rajesh Kumar"
         )
+        self.extract_calls: list[dict] = []  # records (model, prompt_hint) per call
 
     def classify_document(self, document: Document) -> DocumentClassification:
         if self._fail:
             raise LLMError("simulated classification failure")
         return self._classification
 
-    def extract_document(self, document: Document) -> dict[str, Any]:
+    def extract_document(
+        self, document: Document, *, model: str | None = None, prompt_hint: str | None = None
+    ) -> dict[str, Any]:
+        self.extract_calls.append({"model": model, "prompt_hint": prompt_hint})
         if self._fail:
             raise LLMError("simulated extraction failure")
         return self._fields
@@ -203,7 +207,7 @@ def test_extract_document_validates_and_coerces_llm_json(monkeypatch):
     monkeypatch.setattr(
         client,
         "_ask",
-        lambda doc, prompt, max_tokens=1024: '{"patient_name": "Rajesh", "total": "1500"}',
+        lambda doc, prompt, max_tokens=1024, model=None: '{"patient_name": "Rajesh", "total": "1500"}',
     )
     fields = client.extract_document(Document(file_id="F1", actual_type="HOSPITAL_BILL"))
     assert fields["patient_name"] == "Rajesh"
@@ -217,7 +221,48 @@ def test_extract_document_raises_on_bad_schema(monkeypatch):
     monkeypatch.setattr(
         client,
         "_ask",
-        lambda doc, prompt, max_tokens=1024: '{"total": "not-a-number"}',
+        lambda doc, prompt, max_tokens=1024, model=None: '{"total": "not-a-number"}',
     )
     with pytest.raises(LLMError):
         client.extract_document(Document(file_id="F1", actual_type="HOSPITAL_BILL"))
+
+
+def test_extract_document_honors_model_override_and_prompt_hint(monkeypatch):
+    from app.llm.client import AnthropicLLMClient
+
+    client = AnthropicLLMClient(model="default-model", api_key="dummy", timeout=1.0)
+    seen: dict = {}
+
+    def fake_ask(doc, prompt, max_tokens=1024, model=None):
+        seen["prompt"] = prompt
+        seen["model"] = model
+        return '{"patient_name": "Asha"}'
+
+    monkeypatch.setattr(client, "_ask", fake_ask)
+    client.extract_document(
+        Document(file_id="F1", actual_type="HOSPITAL_BILL"),
+        model="strong-model",
+        prompt_hint="LOOK AGAIN at the footer.",
+    )
+    assert seen["model"] == "strong-model"  # override reached the API call
+    assert "LOOK AGAIN at the footer." in seen["prompt"]  # hint appended to the prompt
+
+
+def test_create_falls_back_to_default_model_without_override(monkeypatch):
+    from app.llm.client import AnthropicLLMClient
+
+    client = AnthropicLLMClient(model="default-model", api_key="dummy", timeout=1.0)
+    seen: dict = {}
+
+    class _Messages:
+        def create(self, *, model, **kwargs):
+            seen["model"] = model
+
+            class _Resp:
+                content = [type("B", (), {"text": "{}"})()]
+
+            return _Resp()
+
+    monkeypatch.setattr(client, "_client", type("C", (), {"messages": _Messages()})())
+    client._create(max_tokens=10, messages=[])
+    assert seen["model"] == "default-model"  # None override -> client default
