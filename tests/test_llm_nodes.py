@@ -281,7 +281,7 @@ def test_extract_document_validates_and_coerces_llm_json(monkeypatch):
     monkeypatch.setattr(
         client,
         "_ask",
-        lambda doc, prompt, max_tokens=1024, model=None: '{"patient_name": "Rajesh", "total": "1500"}',
+        lambda *a, **k: '{"patient_name": "Rajesh", "total": "1500"}',
     )
     fields = client.extract_document(Document(file_id="F1", actual_type="HOSPITAL_BILL"))
     assert fields["patient_name"] == "Rajesh"

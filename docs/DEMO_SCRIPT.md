@@ -873,7 +873,7 @@ surfaces its own uncertainty instead of hiding it."*
 ## W15. File-by-file — Part 9: tests
 
 **Why tests matter here:** the brief says "a system with no tests is incomplete,"
-and Engineering Quality is 25%. There are ~67 tests; `pytest` runs them all.
+and Engineering Quality is 25%. There are ~83 tests; `pytest` runs them all.
 
 - **`conftest.py`** — shared fixtures. `client` wraps the app in a `TestClient`
   *used as a context manager* (the `with` is what triggers FastAPI's lifespan, so

@@ -176,13 +176,21 @@ sub-limits are usually *annual per-category* caps, which would need per-category
 tracking I haven't built."
 - This answer turns the weakness into evidence you understand insurance domain modeling.
 
-### Q3. "Is this really multi-agentic?" *(re: the bonus)*
-**Honest answer:** "It's a LangGraph DAG of single-responsibility nodes — three call
-an LLM, the rest are pure functions. I describe them as small agents because each owns
-one decision and they compose, but I won't oversell it: there's no autonomous
-planning or tool-use loop. If you want true agentic behaviour, the natural place is a
-*classification/extraction supervisor* that retries with a stronger model or asks for
-a better photo when confidence is low — that's a clean extension of the current graph."
+### Q3. "Is this really agentic?" *(re: the bonus)*
+**Honest answer:** "The pipeline is a LangGraph DAG of single-responsibility nodes —
+but extraction is a genuine **agent**: an autonomous plan → act → observe → decide loop
+(`app/agents/extraction_agent.py`). On a weak or incomplete read it decides among real
+actions — re-prompt with a field-targeted hint, escalate from a cheap model to a
+stronger one, or give up and degrade — looping to a capped budget. That clears the
+agent bar: it chooses its next action from observed state, not a fixed edge. I'll be
+precise though: it's *one* self-correcting agent, not a multi-agent system. I put the
+agent in **perception**, deliberately — cognition stays deterministic so decisions
+remain reproducible. The same loop generalizes to a `ClassificationAgent` next, and a
+supervisor over specialist agents after that — but I'd rather show one real agent than
+relabel a pipeline."
+- **Where:** `app/agents/extraction_agent.py`; the loop diagram is in architecture §6.1.
+- **Demo it live:** a hard real upload through `POST /claims/upload` — the trace shows
+  attempt 1 (cheap model, low completeness) → escalate → attempt 2 (strong model) → converge.
 
 ### Q4. "Your eval is 12/12 but on injected content — does it test your AI at all?"
 **Honest answer:** "Correct, and that's deliberate. The 12/12 proves the deterministic

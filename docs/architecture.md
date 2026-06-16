@@ -199,7 +199,7 @@ The seven graph nodes (file names match exactly, one file per node in
 | 1 | `intake` | det | raw request | resolved member, trace initialized | invalid request → 422 before graph |
 | 2 | `classify` | LLM | each document | resolved type / readability / patient on the doc | trust declared `actual_type`; vision error → trace failed |
 | 3 | `verify_documents` | det | docs + types + quality + patient names | pass, or **blocking issues** (+ status BLOCKED) | n/a (pure) |
-| 4 | `extract` | LLM | each document | `extracted_content` + extraction-quality signal | use injected `content`; else Pydantic-validate AI output, degrade on failure |
+| 4 | `extract` | LLM (agent) | each document | `extracted_content` + extraction-quality signal | use injected `content`; else run the self-correction agent (§6.1) — Pydantic-validated, retries + escalates, degrades if it can't converge |
 | 5 | `normalize_diagnosis` | det | free-text diagnosis | canonical policy key (e.g. `diabetes`) | unmapped → no key (coverage still decided by category) |
 | 6 | `adjudicate` | det | claim + policy + normalized data | decision + amount + per-line reasons + confidence | runs on whatever data exists |
 | 7 | `explain` | LLM | the decision | member-facing explanation string | template fallback from the decision |
@@ -210,6 +210,47 @@ issues straight to `END`, otherwise to `extract`. This is what makes TC001–TC0
 stop *before* any decision. The API layer (`routes_claims._run_pipeline`)
 assembles the final `ClaimProcessingResult` from the end state — it is not a
 graph node.
+
+### 6.1 The extraction self-correction agent
+
+`extract` (node 4) is the one place with a genuine **agent** — an autonomous
+plan → act → observe → decide loop (`app/agents/extraction_agent.py`). It exists
+because a single vision read of a hard document (handwriting, stamps, phone
+photos) is exactly where one shot is weakest, and the original behavior accepted
+a weak read as-is. The agent instead tries to recover before degrading:
+
+1. **act** — read the document (cheap baseline model on the first attempt).
+2. **observe** — score the read with `extraction_completeness`.
+3. **decide** — good enough → converge; below threshold and attempts remain →
+   escalate to the strong model with a sharper, field-targeted prompt and retry;
+   budget exhausted → give up, returning the best read so far and flagging it so
+   the node degrades (the existing graceful-degradation path).
+
+```mermaid
+flowchart LR
+    R[read: current-tier model + hint] --> O[score completeness]
+    O --> D{>= threshold?}
+    D -- yes --> C[converge]
+    D -- no --> B{attempts left?}
+    B -- yes --> E[escalate model + sharper prompt] --> R
+    B -- no --> G[give up → degrade]
+```
+
+Three boundaries keep this honest and safe:
+
+- **Perception only.** The agent never decides a claim — it only changes the
+  *quality* of the fields handed to the deterministic engine. Cognition stays
+  reproducible.
+- **Model tiering.** Cheap model first, strong model only on retry — so the
+  common case (clean document) is cheap and the cost lands only on hard reads.
+- **Eval-safe.** The agent is constructed only when an LLM client is present and
+  runs only on the no-`content` path; the 12 injected-content cases never touch
+  it, so the eval stays deterministic. Disabling it (or `max_attempts=1`)
+  reproduces the original single-shot behavior.
+
+This is *agentic*, not *multi-agent*: one self-correcting agent. The loop is kept
+generic so a future `ClassificationAgent` (the same recover-before-degrade idea
+applied to document classification) is a thin reuse.
 
 ---
 
@@ -632,7 +673,7 @@ one produces a full trace.
 │   ├── verification/document_verifier.py   # the early-stop gate (pure)
 │   ├── llm/                     # client (3 tasks) + prompts
 │   └── static/index.html       # single-page UI
-├── tests/                       # pytest (67 tests)
+├── tests/                       # pytest (83 tests)
 ├── scripts/
 │   ├── run_eval.py              # → docs/EVAL_REPORT.md (deterministic, offline)
 │   ├── make_sample_docs.py      # generate sample document images
@@ -697,7 +738,7 @@ how to extend it:
 | **P6** | Eval report over all 12 test cases | ✅ done — **12/12 match** every `system_must` (`docs/EVAL_REPORT.md`) |
 | **P7** | Live vision demo over generated sample documents | ✅ done (`docs/VISION_DEMO.md`) |
 
-**67 tests pass; ruff clean. Deployed at**
+**83 tests pass; ruff clean. Deployed at**
 `https://plum-assignment-a651.onrender.com/`.
 
 ---
