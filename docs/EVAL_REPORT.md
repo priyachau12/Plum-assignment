@@ -35,7 +35,7 @@
 
 ```json
 {
-  "claim_id": "CLM_1584C5AE",
+  "claim_id": "CLM_D9733A61",
   "status": "BLOCKED",
   "decision": null,
   "approved_amount": null,
@@ -139,7 +139,7 @@
 
 ```json
 {
-  "claim_id": "CLM_B312532D",
+  "claim_id": "CLM_BF616786",
   "status": "BLOCKED",
   "decision": null,
   "approved_amount": null,
@@ -235,7 +235,7 @@
 
 ```json
 {
-  "claim_id": "CLM_6BF11367",
+  "claim_id": "CLM_793457E4",
   "status": "BLOCKED",
   "decision": null,
   "approved_amount": null,
@@ -334,7 +334,7 @@
 
 ```json
 {
-  "claim_id": "CLM_6E7FDAFE",
+  "claim_id": "CLM_C0CD3800",
   "status": "DECIDED",
   "decision": "APPROVED",
   "approved_amount": 1350.0,
@@ -531,7 +531,7 @@
 
 ```json
 {
-  "claim_id": "CLM_CE1F3A4A",
+  "claim_id": "CLM_F2AFDD5D",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
@@ -681,7 +681,7 @@
 
 ```json
 {
-  "claim_id": "CLM_8EF4C1AE",
+  "claim_id": "CLM_E1AE4956",
   "status": "DECIDED",
   "decision": "PARTIAL",
   "approved_amount": 8000.0,
@@ -872,7 +872,7 @@
 
 ```json
 {
-  "claim_id": "CLM_08B56C93",
+  "claim_id": "CLM_9B2B9405",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
@@ -1047,7 +1047,7 @@
 
 ```json
 {
-  "claim_id": "CLM_245BD5D7",
+  "claim_id": "CLM_4CF0C5D2",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
@@ -1208,7 +1208,7 @@
 
 ```json
 {
-  "claim_id": "CLM_9A666FC7",
+  "claim_id": "CLM_8DA7A448",
   "status": "DECIDED",
   "decision": "MANUAL_REVIEW",
   "approved_amount": 0.0,
@@ -1382,7 +1382,7 @@
 
 ```json
 {
-  "claim_id": "CLM_876976B3",
+  "claim_id": "CLM_446347A0",
   "status": "DECIDED",
   "decision": "APPROVED",
   "approved_amount": 3240.0,
@@ -1581,7 +1581,7 @@
 
 ```json
 {
-  "claim_id": "CLM_DE5E5736",
+  "claim_id": "CLM_4FD89E35",
   "status": "DECIDED",
   "decision": "APPROVED",
   "approved_amount": 4000.0,
@@ -1768,7 +1768,7 @@
 
 ```json
 {
-  "claim_id": "CLM_DE4F6924",
+  "claim_id": "CLM_12CF818A",
   "status": "DECIDED",
   "decision": "REJECTED",
   "approved_amount": 0.0,
