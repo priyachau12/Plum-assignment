@@ -7,10 +7,11 @@ decision with a **full step-by-step trace**.
 
 > **Live demo:** **https://plum-assignment-a651.onrender.com/**
 > **Eval result: 12/12 test cases match** every expected outcome and `system_must`
-> requirement (run offline and deterministic). See
-> [`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md). The real Claude vision path is
-> demonstrated on actual document images in
-> [`docs/VISION_DEMO.md`](docs/VISION_DEMO.md).
+> requirement (run offline and deterministic) — see
+> [`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md). The real Claude vision path runs on
+> the live demo and is reproducible locally with
+> [`scripts/run_vision_demo.py`](scripts/run_vision_demo.py) (see
+> [Live vision demo](#live-vision-demo-real-claude-vision)).
 
 This is my submission for the Plum AI Engineer assignment. The full problem
 statement is in [`assignment.md`](assignment.md). Maintained by Priya Chau.
@@ -87,6 +88,33 @@ path, the rule engine, and the financial computation order is in
 
 ---
 
+## What it handles (the 12 required cases)
+
+Every scenario in [`test_cases.json`](test_cases.json) maps to a specific,
+testable mechanism — no scenario is special-cased. The first three stop at the
+verification gate; the rest run the ordered rule engine
+([`app/rules/engine.py`](app/rules/engine.py)).
+
+| # | Scenario | Where it's decided | Outcome |
+|---|---|---|---|
+| TC001 | Wrong document type | verify · required-docs check | `BLOCKED` — names uploaded vs. required type |
+| TC002 | Unreadable document | verify · readability check | `BLOCKED` — asks to re-upload that file |
+| TC003 | Different patients | verify · patient-match check | `BLOCKED` — names the patient on each doc |
+| TC004 | Clean consultation | rule 9 · financials | `APPROVED` ₹1,350 (10% co-pay) |
+| TC005 | Diabetes in waiting period | normalize + rule 3 | `REJECTED` `WAITING_PERIOD` + eligibility date |
+| TC006 | Dental cosmetic exclusion | rule 6 · line-item exclusions | `PARTIAL` ₹8,000 (per-line reasons) |
+| TC007 | MRI without pre-auth | rule 4 · pre-authorization | `REJECTED` `PRE_AUTH_MISSING` |
+| TC008 | Per-claim limit exceeded | rule 5 · per-claim cap | `REJECTED` `PER_CLAIM_EXCEEDED` |
+| TC009 | Same-day claim pattern | rule 7 · fraud signals | `MANUAL_REVIEW` + the triggering signals |
+| TC010 | Network hospital | rule 9 · discount **before** co-pay | `APPROVED` ₹3,240 (full breakdown) |
+| TC011 | Component failure | degrade-not-crash path | `APPROVED`, lower confidence, failure noted |
+| TC012 | Excluded treatment (obesity) | normalize + rule 2 | `REJECTED` `EXCLUDED_CONDITION` |
+
+The full decision output and per-requirement checks for each case are in
+[`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md).
+
+---
+
 ## Tech stack
 
 | Layer | Choice |
@@ -132,6 +160,14 @@ uvicorn app.main:app --reload
 Then open **http://127.0.0.1:8000/** for the UI, or the auto-generated API docs
 at **http://127.0.0.1:8000/docs**.
 
+### Deployment
+
+The [live demo](https://plum-assignment-a651.onrender.com/) is deployed on Render
+from [`render.yaml`](render.yaml) (blueprint) / [`Procfile`](Procfile). The build
+is `pip install -r requirements.txt` and the process is the same uvicorn command
+above bound to `$PORT`. `ANTHROPIC_API_KEY` is set in the dashboard (never
+committed); without it the deploy still serves the deterministic JSON path.
+
 ---
 
 ## Using the system
@@ -176,8 +212,11 @@ isn't loaded the endpoint returns `503` rather than deciding without a policy.
 pytest
 ```
 
-Covers the policy loader, claim models, rule engine, diagnosis matcher, document
-checks, LLM nodes (with fakes), the full pipeline, and the API endpoints.
+**87 tests**, all offline (the LLM is faked, so the suite is fast and
+deterministic). Covers the policy loader, claim models, the rule engine and
+financial math, the diagnosis matcher, document verification, the LLM nodes (with
+fakes), the extraction self-correction agent, the full pipeline end-to-end, all
+12 eval cases, and the API endpoints.
 
 ## Eval report
 
@@ -202,7 +241,10 @@ To exercise the real vision path on actual document images (needs
 ```
 
 This classifies and extracts real images with Claude, then adjudicates
-deterministically — see [`docs/VISION_DEMO.md`](docs/VISION_DEMO.md).
+deterministically. The run writes a fresh `docs/VISION_DEMO.md` (a generated
+artifact, not committed — sample images live in [`samples/`](samples/)). The same
+path also runs on the [live demo](https://plum-assignment-a651.onrender.com/) via
+the **Upload documents** mode.
 
 ---
 
@@ -213,30 +255,33 @@ deterministically — see [`docs/VISION_DEMO.md`](docs/VISION_DEMO.md).
 ├── app/
 │   ├── main.py            # FastAPI factory + lifespan (loads policy + graph once)
 │   ├── config.py          # typed settings from env / .env
-│   ├── api/               # /claims, /health, UI routes
+│   ├── exceptions.py      # typed errors (e.g. PolicyLoadError)
+│   ├── api/               # /claims, /claims/upload, /health, /sample-claims, UI
 │   ├── graph/             # LangGraph state, builder, and one file per node
-│   ├── rules/             # deterministic rule engine (decision logic)
+│   ├── agents/            # extraction self-correction agent (perception loop)
+│   ├── rules/             # deterministic rule engine + financials + normalization
 │   ├── llm/               # LLM client + prompts (perception + communication)
-│   ├── models/            # Pydantic models: policy, claim, decision/trace
+│   ├── models/            # Pydantic models: policy, claim, decision/trace, extraction
 │   ├── policy/            # policy_terms.json loader
-│   ├── verification/      # early document checks
+│   ├── verification/      # early document checks (the verification gate)
 │   └── static/            # single-page UI
-├── tests/                 # pytest suite (83 tests)
+├── tests/                 # pytest suite (87 tests)
 ├── scripts/
 │   ├── run_eval.py        # generates docs/EVAL_REPORT.md (offline, deterministic)
 │   ├── make_sample_docs.py    # generates sample document images → samples/
-│   └── run_vision_demo.py     # live vision run → docs/VISION_DEMO.md
-├── samples/               # generated sample document images (for the vision demo)
+│   └── run_vision_demo.py     # live vision run → docs/VISION_DEMO.md (generated)
+├── samples/               # sample document images (for the vision demo / TC003)
 ├── docs/
 │   ├── architecture.md            # design: components, decisions, trade-offs, scaling
 │   ├── TECHNICAL_DOCUMENTATION.md # file-by-file reference + component contracts
 │   ├── EVAL_REPORT.md             # all 12 test cases with full traces
-│   ├── VISION_DEMO.md             # live Claude vision path on real images
 │   └── DEMO_SCRIPT.md             # demo-video storyboard
 ├── policy_terms.json      # policy config, coverage rules, member roster (read at runtime)
 ├── test_cases.json        # 12 test scenarios with expected outcomes
+├── qna.md                 # deep-dive Q&A walkthrough of the whole system
 ├── assignment.md          # the assignment brief
 ├── sample_documents_guide.md  # Indian medical document formats reference
+├── Procfile  render.yaml  # Render deployment (reproduces the live demo)
 ├── requirements.txt  pyproject.toml  .env.example  .gitignore
 ```
 
@@ -253,8 +298,11 @@ deterministically — see [`docs/VISION_DEMO.md`](docs/VISION_DEMO.md).
   outputs, and errors for every significant component).
 - **[`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md)** — the eval results (all 12
   cases, per-requirement checks, full traces).
-- **[`docs/VISION_DEMO.md`](docs/VISION_DEMO.md)** — the real Claude vision path
-  run end-to-end on actual document images.
+- **[`qna.md`](qna.md)** — a deep-dive Q&A walkthrough that traces the system in
+  execution order, with clickable `file.py:line` references throughout.
+- **`docs/VISION_DEMO.md`** — *generated on demand* by
+  [`scripts/run_vision_demo.py`](scripts/run_vision_demo.py): the real Claude
+  vision path run end-to-end on actual document images.
 
 ---
 
